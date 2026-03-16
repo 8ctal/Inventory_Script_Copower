@@ -30,8 +30,8 @@ try {
     
     # 2. Red e IP (Filtro ms robusto)
     $IPAddress = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { 
-        $_.InterfaceAlias -notmatch 'Loopback|vEthernet|Pseudo|Virtual' -and $_.IPAddress -notlike '169.*'
-    } | Select-Object -First 1).IPAddress
+            $_.InterfaceAlias -notmatch 'Loopback|vEthernet|Pseudo|Virtual' -and $_.IPAddress -notlike '169.*'
+        } | Select-Object -First 1).IPAddress
     if (!$IPAddress) { $IPAddress = "N/A" }
 
     # 3. Usuarios y Dominio
@@ -40,11 +40,11 @@ try {
     # 3.1. Empleado actual (usuario local que está usando la máquina)
     # Solo se guarda el empleado actual, no todos los usuarios locales
     $empleadoActual = @{
-        nombre = $env:USERNAME  # Nombre del usuario local actual
+        nombre             = $env:USERNAME  # Nombre del usuario local actual
         correo_empresarial = $null
         numero_empresarial = $null
-        area = $null
-        cargo = $null
+        area               = $null
+        cargo              = $null
     }
     
     # Timestamp de la máquina local (formato ISO 8601)
@@ -54,47 +54,50 @@ try {
     $appsList = "No detectado"
     try {
         $apps = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* -ErrorAction SilentlyContinue | 
-                Where-Object { $_.DisplayName -ne $null } | Select-Object -Unique DisplayName
+        Where-Object { $_.DisplayName -ne $null } | Select-Object -Unique DisplayName
         if ($apps) { $appsList = ($apps.DisplayName) -join " | " }
-    } catch { $appsList = "Error al leer registro" }
+    }
+    catch { $appsList = "Error al leer registro" }
 
     # 5. Cuentas de Correo
     $emailList = "Ninguna detectada"
     try {
         $emails = (Get-ChildItem -Path "HKCU:\Software\Microsoft\IdentityCRL\UserExtendedProperties" -ErrorAction SilentlyContinue).Name | 
-                  ForEach-Object { Split-Path $_ -Leaf }
+        ForEach-Object { Split-Path $_ -Leaf }
         if ($emails) { $emailList = $emails -join ", " }
-    } catch { }
+    }
+    catch { }
 
     # 6. Licencia (ESTA ERA LA PARTE DEL ERROR)
     $estadoLicencia = "Desconocido"
     try {
         $licenseObj = Get-CimInstance SoftwareLicensingProduct | Where-Object { $_.PartialProductKey -and $_.ApplicationID -eq "55c282d3-052d-4a11-841d-2746af130b4d" }
         if ($licenseObj) {
-            $statusMap = @{ 1="Licenciado"; 2="OOBGrace"; 3="OOTGrace"; 4="NonGenuineGrace"; 5="NotActivated"; 0="Unlicensed" }
+            $statusMap = @{ 1 = "Licenciado"; 2 = "OOBGrace"; 3 = "OOTGrace"; 4 = "NonGenuineGrace"; 5 = "NotActivated"; 0 = "Unlicensed" }
             $statusVal = $licenseObj.LicenseStatus
             if ($statusMap.ContainsKey([int]$statusVal)) {
                 $estadoLicencia = $statusMap[[int]$statusVal]
             }
         }
-    } catch { $estadoLicencia = "Error al consultar" }
+    }
+    catch { $estadoLicencia = "Error al consultar" }
 
     # Construccin del Payload
     $Payload = @{
-        hostname          = $env:COMPUTERNAME
-        usuario           = $env:USERNAME
-        fabricante        = if ($bios.Manufacturer) { $bios.Manufacturer } else { "N/A" }
-        modelo            = if ($compSystem.Model) { $compSystem.Model } else { "N/A" }
-        serial            = if ($bios.SerialNumber) { $bios.SerialNumber } else { "N/A" }
-        sistema_op        = $os.Caption
-        sistema_version   = $os.Version
-        ram_gb            = $totalRamGB
-        procesador        = $cpu.Name
-        disco_total_gb    = [math]::Round($disk.Size / 1GB, 2)
-        disco_libre_gb    = [math]::Round($disk.FreeSpace / 1GB, 2)
-        dominio           = $compSystem.Domain
-        usuarios_locales  = $localUsers
-        ip_local          = $IPAddress
+        hostname             = $env:COMPUTERNAME
+        usuario              = $env:USERNAME
+        fabricante           = if ($bios.Manufacturer) { $bios.Manufacturer } else { "N/A" }
+        modelo               = if ($compSystem.Model) { $compSystem.Model } else { "N/A" }
+        serial               = if ($bios.SerialNumber) { $bios.SerialNumber } else { "N/A" }
+        sistema_op           = $os.Caption
+        sistema_version      = $os.Version
+        ram_gb               = $totalRamGB
+        procesador           = $cpu.Name
+        disco_total_gb       = [math]::Round($disk.Size / 1GB, 2)
+        disco_libre_gb       = [math]::Round($disk.FreeSpace / 1GB, 2)
+        dominio              = $compSystem.Domain
+        usuarios_locales     = $localUsers
+        ip_local             = $IPAddress
         programas_instalados = $appsList
         cuentas_correo       = $emailList
         estado_licencia      = $estadoLicencia
@@ -128,10 +131,10 @@ try {
     Write-Host ""
     
     # Convertir null a string vaco para mostrar correctamente
-    if ($empleadoActual.correo_empresarial -eq $null) { $empleadoActual.correo_empresarial = "" }
-    if ($empleadoActual.numero_empresarial -eq $null) { $empleadoActual.numero_empresarial = "" }
-    if ($empleadoActual.area -eq $null) { $empleadoActual.area = "" }
-    if ($empleadoActual.cargo -eq $null) { $empleadoActual.cargo = "" }
+    if ($null -eq $empleadoActual.correo_empresarial) { $empleadoActual.correo_empresarial = "" }
+    if ($null -eq $empleadoActual.numero_empresarial) { $empleadoActual.numero_empresarial = "" }
+    if ($null -eq $empleadoActual.area) { $empleadoActual.area = "" }
+    if ($null -eq $empleadoActual.cargo) { $empleadoActual.cargo = "" }
     
     # Permitir editar informacin del empleado actual
     Write-Host "--- INFORMACIN DEL EMPLEADO (Editable) ---" -ForegroundColor Yellow
@@ -235,6 +238,7 @@ try {
     Write-Host "Programas detectados: $($apps.Count)" -ForegroundColor Gray
     Write-Host "==================================================" -ForegroundColor Green
 
-} catch {
+}
+catch {
     Write-Host "Ocurri un error inesperado: $($_.Exception.Message)" -ForegroundColor Red
 }
