@@ -1,70 +1,102 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param (
-    [Parameter(Mandatory=1, Position=0)]
-    [String]
-    $SerialNumber
+    [Parameter(Mandatory = 1, Position = 0)]
+    [String]$SerialNumber
 )
+
+# Forzamos TLS 1.2 para asegurar la conexión con las APIs modernas
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Get-TypeInfo {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory=1, Position=0)]
-        [String]
-        $SerialNumber
+        [Parameter(Mandatory = 1, Position = 0)]
+        [String]$SerialNumber
     )
-    # Añadimos [0] para tomar el primer resultado antes de expandir el nombre
-    $ResponseJson = Invoke-WebRequest -Uri "https://pcsupport.lenovo.com/us/en/api/v4/mse/getproducts?productId=$SerialNumber" | Select-Object -ExpandProperty Content | ConvertFrom-Json
 
-    $TypeText = $ResponseJson[0].Name  # Accedemos al primer elemento de la lista
+    try {
+        $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+        $url = "https://pcsupport.lenovo.com/us/en/api/v4/mse/getproducts?productId=$SerialNumber"
+        
+        $Response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers -ErrorAction Stop
 
-    $TypeNumber = ($TypeText -split 'Type ')[1]
-    $TypeName = ($TypeText -split ' - ')[0]
+        if ($null -eq $Response -or $Response.Count -eq 0) {
+            return $null
+        }
 
-    return [PSCustomObject]@{
-        SerialNumber = $SerialNumber
-        FullType = $TypeText
-        TypeNumber = $TypeNumber
-        TypeName = $TypeName
-
+        # Almacenamos toda la línea de texto extraída sin procesar (sin regex ni splits)
+        return [PSCustomObject]@{
+            SerialNumber = $SerialNumber
+            FullType     = $Response[0].Name
+        }
+    }
+    catch {
+        return $null
     }
 }
 
 function Get-WarrantyEnd {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory=1, Position=0)]
-        [String]
-        $SerialNumber
+        [Parameter(Mandatory = 1, Position = 0)]
+        [String]$SerialNumber
     )
 
-    $Asset = Get-TypeInfo ($SerialNumber)
+    # Obtenemos primero la información del producto
+    $Asset = Get-TypeInfo -SerialNumber $SerialNumber
 
-    $data = @{"serialNumber"="$($Asset.SerialNumber)"; "machineType"="$($Asset.TypeNumber)"; "country"="us"; "language"="en" }
-    $json = $data | ConvertTo-Json
+    if (-not $Asset) {
+        return $null
+    }
 
-    $Response = Invoke-WebRequest -Uri "https://pcsupport.lenovo.com/us/en/api/v4/upsell/redport/getIbaseInfo" `
-        -Method Post `
-        -Headers @{
-            "User-Agent"="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
-            "Accept"="application/json, text/plain, */*";
-            "Accept-Language"="en-US,en;q=0.5";
-            "Content-Type"="application/json"} `
-        -Body $json | Select-Object -ExpandProperty Content
+    # Cuerpo simplificado: Solo Serial, sin usar MachineType para la búsqueda
+    $data = @{
+        "serialNumber" = "$($Asset.SerialNumber)"
+        "country"      = "us"
+        "language"     = "en" 
+    }
+    $jsonBody = $data | ConvertTo-Json -Compress
 
-    $WarrantyStart = $Response | ConvertFrom-Json | Select-Object -ExpandProperty Data | Select-Object -ExpandProperty baseWarranties | Select-Object -ExpandProperty startDate
+    try {
+        $Uri = "https://pcsupport.lenovo.com/us/en/api/v4/upsell/redport/getIbaseInfo"
+        $Headers = @{
+            "User-Agent"      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"
+            "Accept"          = "application/json, text/plain, */*"
+            "Accept-Language" = "en-US,en;q=0.5"
+            "Content-Type"    = "application/json"
+            "Referer"         = "https://pcsupport.lenovo.com/"
+        }
 
-    $WarrantyEnd = $Response | ConvertFrom-Json | Select-Object -ExpandProperty Data | Select-Object -ExpandProperty baseWarranties | Select-Object -ExpandProperty EndDate
+        $ResponseObj = Invoke-RestMethod -Uri $Uri -Method Post -Headers $Headers -Body $jsonBody
 
-    $Product = $Response | ConvertFrom-Json | Select-Object -ExpandProperty Data | Select-Object -ExpandProperty machineInfo | Select-Object -ExpandProperty product
+        if (-not $ResponseObj -or -not $ResponseObj.Data) {
+            return $null
+        }
 
-    $Model = $Response | ConvertFrom-Json | Select-Object -ExpandProperty Data | Select-Object -ExpandProperty machineInfo | Select-Object -ExpandProperty model
+        # Extraemos los datos de la respuesta
+        $WarrantyStart = $ResponseObj.Data.baseWarranties[0].startDate
+        $WarrantyEnd = $ResponseObj.Data.baseWarranties[0].endDate
+        $Product = $ResponseObj.Data.machineInfo.product
+        $Model = $ResponseObj.Data.machineInfo.model
 
-    $Asset | Add-Member -MemberType NoteProperty -Name "WarrantyStart" -Value $WarrantyStart
-    $Asset | Add-Member -MemberType NoteProperty -Name "WarrantyEnd" -Value $WarrantyEnd
-    $Asset | Add-Member -MemberType NoteProperty -Name "Product" -Value $Product
-    $Asset | Add-Member -MemberType NoteProperty -Name "Model" -Value $Model
+        # Añadimos los miembros al objeto original
+        $Asset | Add-Member -MemberType NoteProperty -Name "WarrantyStart" -Value $WarrantyStart -Force
+        $Asset | Add-Member -MemberType NoteProperty -Name "WarrantyEnd" -Value $WarrantyEnd -Force
+        $Asset | Add-Member -MemberType NoteProperty -Name "Product" -Value $Product -Force
+        $Asset | Add-Member -MemberType NoteProperty -Name "Model" -Value $Model -Force
 
-    $Asset
+        return $Asset
+    }
+    catch {
+        return $null
+    }
 }
 
-Get-WarrantyEnd ($SerialNumber)
+# --- Ejecución y salida en formato JSON ---
+$Result = Get-WarrantyEnd -SerialNumber $SerialNumber
+if ($Result) {
+    $Result | ConvertTo-Json -Compress
+}
+else {
+    Write-Error "No se pudo obtener información para el serial: $SerialNumber"
+}

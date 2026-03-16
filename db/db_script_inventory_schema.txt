@@ -16,15 +16,29 @@
     { "name": "procesador", "type": "VARCHAR(200)" },
     { "name": "dominio", "type": "VARCHAR(100)" },
     { "name": "usuarios_locales", "type": "TEXT" },
-    { "name": "sistema_version", "type": "VARCHAR(50)" }
+    { "name": "sistema_version", "type": "VARCHAR(50)" },
+    { "name": "garantia_inicio", "type": "DATE", "nullable": true },
+    { "name": "garantia_fin", "type": "DATE", "nullable": true },
+    { 
+      "name": "correo_empleado", 
+      "type": "VARCHAR(255)", 
+      "nullable": true,
+      "foreign_key": {
+        "references_table": "public.empleados",
+        "references_column": "correo_empresarial",
+        "on_delete": "SET NULL"
+      }
+    }
   ],
   "constraints": {
     "primary_key": "inventario_equipos_pkey",
-    "unique_keys": ["inventario_equipos_serial_key"]
+    "unique_keys": ["inventario_equipos_serial_key"],
+    "foreign_keys": ["fk_inventario_correo_empleado"]
   },
   "indexes": [
     { "name": "inventario_equipos_pkey", "method": "BTREE", "column": "id" },
-    { "name": "inventario_equipos_serial_key", "method": "BTREE", "column": "serial" }
+    { "name": "inventario_equipos_serial_key", "method": "BTREE", "column": "serial" },
+    { "name": "idx_inventario_correo_empleado", "method": "BTREE", "column": "correo_empleado" }
   ]
 }
 {
@@ -61,40 +75,39 @@
   ]
 }
 {
-  "table_name": "usuarios_locales",
+  "table_name": "empleados",
   "columns": [
-    { "name": "id", "type": "SERIAL", "primary_key": true },
+    { "name": "correo_empresarial", "type": "VARCHAR(255)", "primary_key": true },
     { "name": "nombre", "type": "VARCHAR(255)", "nullable": false },
-    { "name": "correo_empresarial", "type": "VARCHAR(255)" },
     { "name": "numero_empresarial", "type": "VARCHAR(50)" },
     { "name": "area", "type": "VARCHAR(100)" },
     { "name": "cargo", "type": "VARCHAR(100)" },
-    { 
-      "name": "maquina_asignada", 
-      "type": "VARCHAR(255)", 
-      "nullable": false,
-      "foreign_key": {
-        "references_table": "public.inventario_equipos",
-        "references_column": "serial",
-        "on_delete": "CASCADE"
-      }
-    },
     { "name": "fecha_creacion", "type": "TIMESTAMP", "default": "now()" },
     { "name": "ultima_actualizacion", "type": "TIMESTAMP", "default": "now()" }
   ],
   "constraints": {
-    "primary_key": "usuarios_locales_pkey",
-    "foreign_keys": ["fk_maquina_asignada"],
-    "composite_unique": {
-      "name": "usuarios_locales_nombre_maquina_asignada_key",
-      "columns": ["nombre", "maquina_asignada"]
-    }
+    "primary_key": "empleados_pkey"
   },
   "indexes": [
-    { "name": "usuarios_locales_pkey", "method": "BTREE", "column": "id" },
-    { "name": "idx_usuarios_correo", "method": "BTREE", "column": "correo_empresarial" },
-    { "name": "idx_usuarios_maquina", "method": "BTREE", "column": "maquina_asignada" },
-    { "name": "usuarios_locales_nombre_maquina_asignada_key", "method": "BTREE", "columns": ["nombre", "maquina_asignada"] }
+    { "name": "empleados_pkey", "method": "BTREE", "column": "correo_empresarial" }
+  ]
+}
+{
+  "table_name": "trazabilidad_equipos",
+  "columns": [
+    { "name": "id", "type": "SERIAL", "primary_key": true },
+    { "name": "serial_equipo", "type": "VARCHAR(100)", "nullable": false },
+    { "name": "accion", "type": "VARCHAR(100)", "nullable": false },
+    { "name": "usuario_anterior", "type": "VARCHAR(255)" },
+    { "name": "usuario_nuevo", "type": "VARCHAR(255)" },
+    { "name": "fecha", "type": "TIMESTAMP", "default": "now()" }
+  ],
+  "constraints": {
+    "primary_key": "trazabilidad_equipos_pkey"
+  },
+  "indexes": [
+    { "name": "trazabilidad_equipos_pkey", "method": "BTREE", "column": "id" },
+    { "name": "idx_trazabilidad_serial", "method": "BTREE", "column": "serial_equipo" }
   ]
 }
 
