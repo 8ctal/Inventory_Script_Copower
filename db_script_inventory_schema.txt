@@ -1,0 +1,100 @@
+{
+  "table_name": "inventario_equipos",
+  "columns": [
+    { "name": "id", "type": "SERIAL", "primary_key": true },
+    { "name": "hostname", "type": "VARCHAR(100)" },
+    { "name": "usuario", "type": "VARCHAR(100)" },
+    { "name": "fabricante", "type": "VARCHAR(100)" },
+    { "name": "modelo", "type": "VARCHAR(100)" },
+    { "name": "serial", "type": "VARCHAR(100)", "unique": true },
+    { "name": "sistema_op", "type": "VARCHAR(150)" },
+    { "name": "ram_gb", "type": "NUMERIC(5,2)" },
+    { "name": "disco_total_gb", "type": "NUMERIC(10,2)" },
+    { "name": "disco_libre_gb", "type": "NUMERIC(10,2)" },
+    { "name": "ip_local", "type": "VARCHAR(20)" },
+    { "name": "ultima_actualizacion", "type": "TIMESTAMP", "default": "CURRENT_TIMESTAMP" },
+    { "name": "procesador", "type": "VARCHAR(200)" },
+    { "name": "dominio", "type": "VARCHAR(100)" },
+    { "name": "usuarios_locales", "type": "TEXT" },
+    { "name": "sistema_version", "type": "VARCHAR(50)" }
+  ],
+  "constraints": {
+    "primary_key": "inventario_equipos_pkey",
+    "unique_keys": ["inventario_equipos_serial_key"]
+  },
+  "indexes": [
+    { "name": "inventario_equipos_pkey", "method": "BTREE", "column": "id" },
+    { "name": "inventario_equipos_serial_key", "method": "BTREE", "column": "serial" }
+  ]
+}
+{
+  "table_name": "inventario_software",
+  "columns": [
+    { "name": "id", "type": "SERIAL", "primary_key": true },
+    { 
+      "name": "serial_equipo", 
+      "type": "VARCHAR(100)", 
+      "unique": true,
+      "foreign_key": {
+        "references_table": "public.inventario_equipos",
+        "references_column": "serial",
+        "on_delete": "CASCADE"
+      }
+    },
+    { "name": "programas_instalados", "type": "TEXT" },
+    { "name": "cuentas_correo", "type": "TEXT" },
+    { "name": "estado_licencia", "type": "VARCHAR(100)" },
+    { 
+      "name": "ultima_actualizacion", 
+      "type": "TIMESTAMP", 
+      "default": "((now() AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')" 
+    }
+  ],
+  "constraints": {
+    "primary_key": "inventario_software_pkey",
+    "foreign_keys": ["inventario_software_serial_equipo_fkey"],
+    "unique_keys": ["unique_serial_software"]
+  },
+  "indexes": [
+    { "name": "inventario_software_pkey", "method": "BTREE", "column": "id" },
+    { "name": "unique_serial_software", "method": "BTREE", "column": "serial_equipo" }
+  ]
+}
+{
+  "table_name": "usuarios_locales",
+  "columns": [
+    { "name": "id", "type": "SERIAL", "primary_key": true },
+    { "name": "nombre", "type": "VARCHAR(255)", "nullable": false },
+    { "name": "correo_empresarial", "type": "VARCHAR(255)" },
+    { "name": "numero_empresarial", "type": "VARCHAR(50)" },
+    { "name": "area", "type": "VARCHAR(100)" },
+    { "name": "cargo", "type": "VARCHAR(100)" },
+    { 
+      "name": "maquina_asignada", 
+      "type": "VARCHAR(255)", 
+      "nullable": false,
+      "foreign_key": {
+        "references_table": "public.inventario_equipos",
+        "references_column": "serial",
+        "on_delete": "CASCADE"
+      }
+    },
+    { "name": "fecha_creacion", "type": "TIMESTAMP", "default": "now()" },
+    { "name": "ultima_actualizacion", "type": "TIMESTAMP", "default": "now()" }
+  ],
+  "constraints": {
+    "primary_key": "usuarios_locales_pkey",
+    "foreign_keys": ["fk_maquina_asignada"],
+    "composite_unique": {
+      "name": "usuarios_locales_nombre_maquina_asignada_key",
+      "columns": ["nombre", "maquina_asignada"]
+    }
+  },
+  "indexes": [
+    { "name": "usuarios_locales_pkey", "method": "BTREE", "column": "id" },
+    { "name": "idx_usuarios_correo", "method": "BTREE", "column": "correo_empresarial" },
+    { "name": "idx_usuarios_maquina", "method": "BTREE", "column": "maquina_asignada" },
+    { "name": "usuarios_locales_nombre_maquina_asignada_key", "method": "BTREE", "columns": ["nombre", "maquina_asignada"] }
+  ]
+}
+
