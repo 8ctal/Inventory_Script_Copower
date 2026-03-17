@@ -7,6 +7,27 @@ const sql = neon(process.env.DATABASE_URL);
 
 app.use(express.json({ limit: '10mb' })); // Aumentamos límite para listas largas de software
 
+const odooClient = require("./odoo_client");
+const imageService = require("./image_service");
+
+// Boot up logic to check and alter schema, then load Odoo cache
+async function bootstrap() {
+    try {
+        console.log("Starting DB Schema check...");
+        await sql`
+            ALTER TABLE inventario_equipos 
+            ADD COLUMN IF NOT EXISTS odoo_id INT,
+            ADD COLUMN IF NOT EXISTS image_url TEXT,
+            ADD COLUMN IF NOT EXISTS synced BOOLEAN DEFAULT false;
+        `;
+        console.log("DB Schema updated correctly.");
+        await odooClient.refreshCache();
+    } catch (err) {
+        console.error("Error during bootstrapping:", err.message);
+    }
+}
+bootstrap();
+
 app.post("/api/inventario", async (req, res) => {
     try {
         const d = req.body;
@@ -147,10 +168,110 @@ app.post("/api/inventario", async (req, res) => {
             tipo: d.tipo || "Entrega"
         }).catch(err => console.error("Error llamando a n8n:", err.message));
 
-        console.log(`Inventario actualizado: ${d.hostname}`);
+        console.log(`Inventario actualizado en BD: ${d.hostname}`);
+
+        // Odoo Sync Logic Asynchronously
+        setTimeout(async () => {
+            try {
+                // 1. Resolver IDs en caché de Odoo
+                const empleadoOdooId = odooClient.resolveUserId(d.empleado_actual ? d.empleado_actual.correo_empresarial : null) || null;
+                const proveedorOdooId = odooClient.resolvePartnerId(d.proveedor) || null; // suponiendo d.proveedor existe
+                const categoriaOdooId = odooClient.resolveCategoryId(d.categoria) || null;
+
+                // 2. Buscar imagen
+                console.log(`Buscando imagen para ${d.fabricante} ${d.modelo}...`);
+                const imageUrl = await imageService.processDeviceImage(d.fabricante, d.modelo);
+                let imageBase64 = null;
+                if (imageUrl) {
+                    imageBase64 = await imageService.getBase64FromUrl(imageUrl);
+                }
+
+                // 3. Crear equipo en Odoo
+                console.log(`Creando equipo en Odoo para serial ${d.serial}...`);
+                const equipmentData = {
+                    name: `${d.fabricante} ${d.modelo} - ${d.serial}`,
+                    serial_no: d.serial,
+                    model: d.modelo,
+                    location: d.ip_local || '',
+                    assign_date: timestamp.split('T')[0], // YYYY-MM-DD
+                    warranty_date: garantiaFin ? garantiaFin.split('T')[0] : false,
+                    image_1920: imageBase64 || false,
+                    partner_id: proveedorOdooId || false,
+                    category_id: categoriaOdooId || false,
+                    technician_user_id: odooClient.resolveUserId('sistemas@copower.com.co') || false,
+                    owner_user_id: empleadoOdooId || false
+                };
+
+                const odooId = await odooClient.createEquipment(equipmentData);
+                console.log(`Equipo creado en Odoo con ID: ${odooId}`);
+
+                // 4. Actualizar Neon DB con estado sync
+                await sql`
+                    UPDATE inventario_equipos 
+                    SET odoo_id = ${odooId}, image_url = ${imageUrl}, synced = true
+                    WHERE serial = ${d.serial};
+                `;
+                console.log(`Neon DB sync actualizado para serial ${d.serial}`);
+
+            } catch (syncErr) {
+                console.error(`Error sincronizando a Odoo para ${d.serial}:`, syncErr.message);
+            }
+        }, 100);
+
         res.status(200).json({ status: "success" });
     } catch (error) {
         console.error("Error en servidor:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Nuevos Endpoints según new_impl.md
+
+app.post("/validate", async (req, res) => {
+    try {
+        const { usuario, proveedor, categoria } = req.body;
+        const resUser = odooClient.resolveUserId(usuario);
+        const resPartner = odooClient.resolvePartnerId(proveedor);
+        const resCategory = odooClient.resolveCategoryId(categoria);
+        
+        res.status(200).json({
+            usuario: resUser ? { id: resUser, found: true } : { found: false },
+            proveedor: resPartner ? { id: resPartner, found: true } : { found: false },
+            categoria: resCategory ? { id: resCategory, found: true } : { found: false }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post("/image", async (req, res) => {
+    try {
+        const { marca, modelo } = req.body;
+        if (!marca || !modelo) return res.status(400).json({ error: "Falta marca o modelo" });
+        const imageUrl = await imageService.processDeviceImage(marca, modelo);
+        if (imageUrl) {
+            res.status(200).json({ url: imageUrl });
+        } else {
+            res.status(404).json({ error: "Imagen no encontrada" });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post("/sync", async (req, res) => {
+    // Sincronización manual bajo demanda si algún equipo falló, se podría hacer aquí llamando Odoo
+    res.status(200).json({ message: "Sync manual endpoint: En desarrollo. La sync ocurre automáticamente en /api/inventario." });
+});
+
+app.post("/webhook/odoo", async (req, res) => {
+    // Webhook para Odoo
+    try {
+        const data = req.body;
+        console.log("Recibida actualización desde Odoo:", data);
+        // Lógica para actualizar en Neon DB...
+        res.status(200).json({ status: "success" });
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
