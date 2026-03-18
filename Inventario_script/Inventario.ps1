@@ -191,6 +191,17 @@ try {
 
     # Actualizar el payload (asegúrate de incluirlo aquí)
     $Payload.tipo = $tipoMovimiento
+    
+    Write-Host ""
+    Write-Host "--- DATOS PARA ODOO ---" -ForegroundColor Yellow
+    Write-Host "Proveedor del equipo [Ej. Lenovo, Dell, etc.]" -ForegroundColor White
+    $proveedor = Read-Host "Escriba el proveedor (o presione Enter para omitir)"
+    if ($proveedor.Trim() -ne "") { $Payload.proveedor = $proveedor.Trim() }
+
+    Write-Host "Categoria del equipo [Ej. EQUIPO DE COMPUTO, Impresoras, etc.]" -ForegroundColor White
+    $categoria = Read-Host "Escriba la categoria (o presione Enter para omitir)"
+    if ($categoria.Trim() -ne "") { $Payload.categoria = $categoria.Trim() }
+
     Write-Host ""
     Write-Host "Presione Enter para enviar los datos o Ctrl+C para cancelar..." -ForegroundColor Cyan
     Read-Host
@@ -233,6 +244,13 @@ try {
     }
     if ($empleadoActual.cargo) {
         Write-Host "Cargo: $($empleadoActual.cargo)" -ForegroundColor Cyan
+    }
+    
+    if ($Payload.proveedor) {
+        Write-Host "Proveedor: $($Payload.proveedor)" -ForegroundColor Cyan
+    }
+    if ($Payload.categoria) {
+        Write-Host "Categoria: $($Payload.categoria)" -ForegroundColor Cyan
     }
     Write-Host ""
     Write-Host "Programas detectados: $($apps.Count)" -ForegroundColor Gray

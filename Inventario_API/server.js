@@ -174,7 +174,9 @@ app.post("/api/inventario", async (req, res) => {
         setTimeout(async () => {
             try {
                 // 1. Resolver IDs en caché de Odoo
-                const empleadoOdooId = odooClient.resolveUserId(d.empleado_actual ? d.empleado_actual.correo_empresarial : null) || null;
+                const emailToResolve = d.empleado_actual ? d.empleado_actual.correo_empresarial : null;
+                const empleadoOdooId = odooClient.resolveUserId(emailToResolve) || null;
+                const employeeId = odooClient.resolveEmployeeId(emailToResolve) || null;
                 const proveedorOdooId = odooClient.resolvePartnerId(d.proveedor) || null; // suponiendo d.proveedor existe
                 const categoriaOdooId = odooClient.resolveCategoryId(d.categoria) || null;
 
@@ -190,16 +192,27 @@ app.post("/api/inventario", async (req, res) => {
                 console.log(`Creando equipo en Odoo para serial ${d.serial}...`);
                 const equipmentData = {
                     name: `${d.fabricante} ${d.modelo} - ${d.serial}`,
+                    display_name: `${d.fabricante} ${d.modelo} - ${d.serial}`,
                     serial_no: d.serial,
                     model: d.modelo,
                     location: d.ip_local || '',
+                    cost: d.costo || 0,
+                    rental_cost: d.costo_renta || 0,
+                    note: `<p>Hostname: ${d.hostname || ''}<br/>SO: ${d.sistema_op || ''} ${d.sistema_version || ''}<br/>RAM: ${d.ram_gb || ''}GB<br/>Procesador: ${d.procesador || ''}<br/>Disco: ${d.disco_total_gb || ''}GB</p>`,
                     assign_date: timestamp.split('T')[0], // YYYY-MM-DD
                     warranty_date: garantiaFin ? garantiaFin.split('T')[0] : false,
+                    effective_date: timestamp.split('T')[0],
+                    period: 90,
+                    maintenance_duration: 1.0,
                     image_1920: imageBase64 || false,
+                    active: true,
+                    day_last_maintenance_done: timestamp.split('T')[0],
                     partner_id: proveedorOdooId || false,
                     category_id: categoriaOdooId || false,
                     technician_user_id: odooClient.resolveUserId('sistemas@copower.com.co') || false,
-                    owner_user_id: empleadoOdooId || false
+                    maintenance_team_id: odooClient.resolveTeamId('TECNOLOGIA') || false,
+                    owner_user_id: empleadoOdooId || false,
+                    employee_id: employeeId || false
                 };
 
                 const odooId = await odooClient.createEquipment(equipmentData);

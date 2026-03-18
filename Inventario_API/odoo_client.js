@@ -13,7 +13,9 @@ let cache = {
     users_by_name: {},
     categories_by_name: {},
     partners_by_name: {},
-    teams_by_name: {}
+    teams_by_name: {},
+    employees_by_user_id: {},
+    employees_by_email: {}
 };
 
 function normalize(s) {
@@ -86,6 +88,15 @@ async function refreshCache() {
             if (t.name) cache.teams_by_name[normalize(t.name)] = t.id;
         });
 
+        // Employees
+        const employees = await executeKw('hr.employee', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'work_email', 'user_id'] });
+        cache.employees_by_user_id = {};
+        cache.employees_by_email = {};
+        employees.forEach(e => {
+            if (e.work_email) cache.employees_by_email[e.work_email.toLowerCase()] = e.id;
+            if (e.user_id && e.user_id[0]) cache.employees_by_user_id[e.user_id[0]] = e.id;
+        });
+
         console.log("Odoo cache refreshed successfully.");
     } catch (error) {
         console.error("Error refreshing Odoo cache:", error);
@@ -115,6 +126,32 @@ function resolveTeamId(teamName) {
     return cache.teams_by_name[normalize(teamName)] || null;
 }
 
+function resolveEmployeeId(email) {
+    console.log(`[DEBUG Odoo Cache] Resolving employee ID for: ${email}`);
+    if (!email) {
+        console.log(`[DEBUG Odoo Cache] No email provided to resolveEmployeeId.`);
+        return null;
+    }
+    const keyEmail = email.toLowerCase();
+    
+    // First, try to match by work_email directly in hr.employee
+    if (cache.employees_by_email[keyEmail]) {
+        console.log(`[DEBUG Odoo Cache] Found employee ID ${cache.employees_by_email[keyEmail]} by work_email.`);
+        return cache.employees_by_email[keyEmail];
+    }
+    
+    // If not found, try to find res.users by login, then map to hr.employee
+    console.log(`[DEBUG Odoo Cache] Not found by work_email, checking res.users...`);
+    const userId = cache.users_by_login[keyEmail];
+    if (userId && cache.employees_by_user_id[userId]) {
+        console.log(`[DEBUG Odoo Cache] Found user ID ${userId} by login, mapping to employee ID ${cache.employees_by_user_id[userId]}.`);
+        return cache.employees_by_user_id[userId];
+    }
+    
+    console.log(`[DEBUG Odoo Cache] Could not find employee for email: ${email}`);
+    return null;
+}
+
 async function createEquipment(data) {
     await connect();
     const id = await executeKw('maintenance.equipment', 'create', [data]);
@@ -135,6 +172,7 @@ module.exports = {
     resolveCategoryId,
     resolvePartnerId,
     resolveTeamId,
+    resolveEmployeeId,
     createEquipment,
     updateEquipment
 };
