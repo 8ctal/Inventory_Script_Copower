@@ -11,11 +11,15 @@ const odoo = new Odoo({
 let cache = {
     users_by_login: {},
     users_by_name: {},
+    users_name_by_login: {},
+    users_login_by_id: {},        // id -> login (para cruce con hr.employee)
     categories_by_name: {},
     partners_by_name: {},
     teams_by_name: {},
     employees_by_user_id: {},
-    employees_by_email: {}
+    employees_by_email: {},
+    employees_by_name: {},
+    employees_by_user_login: {}   // res.users.login -> hr.employee.id (cruce directo)
 };
 
 function normalize(s) {
@@ -62,9 +66,13 @@ async function refreshCache() {
         const users = await executeKw('res.users', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'login'] });
         cache.users_by_login = {};
         cache.users_by_name = {};
+        cache.users_name_by_login = {};
+        cache.users_login_by_id = {};
         users.forEach(u => {
             if (u.login) cache.users_by_login[u.login.toLowerCase()] = u.id;
             if (u.name) cache.users_by_name[normalize(u.name)] = u.id;
+            if (u.login && u.name) cache.users_name_by_login[u.login.toLowerCase()] = u.name;
+            if (u.id && u.login) cache.users_login_by_id[u.id] = u.login.toLowerCase();
         });
 
         // Categories
@@ -92,10 +100,20 @@ async function refreshCache() {
         const employees = await executeKw('hr.employee', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'work_email', 'user_id'] });
         cache.employees_by_user_id = {};
         cache.employees_by_email = {};
+        cache.employees_by_name = {};
+        cache.employees_by_user_login = {};
         employees.forEach(e => {
             if (e.work_email) cache.employees_by_email[e.work_email.toLowerCase()] = e.id;
-            if (e.user_id && e.user_id[0]) cache.employees_by_user_id[e.user_id[0]] = e.id;
+            if (e.user_id && e.user_id[0]) {
+                cache.employees_by_user_id[e.user_id[0]] = e.id;
+                // Cross-reference: store login -> employee_id using res.users data
+                const userLogin = cache.users_login_by_id[e.user_id[0]];
+                if (userLogin) cache.employees_by_user_login[userLogin] = e.id;
+            }
+            // Cache by normalized name as final fallback
+            if (e.name) cache.employees_by_name[normalize(e.name)] = e.id;
         });
+        console.log(`[Cache] employees_by_user_login entries: ${Object.keys(cache.employees_by_user_login).length}`);
 
         console.log("Odoo cache refreshed successfully.");
     } catch (error) {
@@ -134,21 +152,35 @@ function resolveEmployeeId(email) {
     }
     const keyEmail = email.toLowerCase();
     
-    // First, try to match by work_email directly in hr.employee
+    // Paso 1: work_email directo en hr.employee
     if (cache.employees_by_email[keyEmail]) {
-        console.log(`[DEBUG Odoo Cache] Found employee ID ${cache.employees_by_email[keyEmail]} by work_email.`);
+        console.log(`[DEBUG Odoo Cache] MATCH via hr.employee.work_email -> employee ID ${cache.employees_by_email[keyEmail]}`);
         return cache.employees_by_email[keyEmail];
     }
+    console.log(`[DEBUG Odoo Cache] No match by work_email.`);
     
-    // If not found, try to find res.users by login, then map to hr.employee
-    console.log(`[DEBUG Odoo Cache] Not found by work_email, checking res.users...`);
-    const userId = cache.users_by_login[keyEmail];
-    if (userId && cache.employees_by_user_id[userId]) {
-        console.log(`[DEBUG Odoo Cache] Found user ID ${userId} by login, mapping to employee ID ${cache.employees_by_user_id[userId]}.`);
-        return cache.employees_by_user_id[userId];
+    // Paso 2: login de res.users cruzado con user_id de hr.employee (directo en caché)
+    if (cache.employees_by_user_login[keyEmail]) {
+        console.log(`[DEBUG Odoo Cache] MATCH via res.users.login -> hr.employee.user_id -> employee ID ${cache.employees_by_user_login[keyEmail]}`);
+        return cache.employees_by_user_login[keyEmail];
+    }
+    console.log(`[DEBUG Odoo Cache] No match via res.users.login cruzado con user_id (user_id puede estar vacío en Odoo).`);
+    
+    // Paso 3 (fallback): nombre del usuario en res.users contra nombre en hr.employee
+    const userName = cache.users_name_by_login[keyEmail];
+    if (userName) {
+        const normalizedName = normalize(userName);
+        console.log(`[DEBUG Odoo Cache] Intentando fallback por nombre: '${userName}' -> normalizado: '${normalizedName}'`);
+        if (cache.employees_by_name[normalizedName]) {
+            console.log(`[DEBUG Odoo Cache] MATCH via nombre -> employee ID ${cache.employees_by_name[normalizedName]}`);
+            return cache.employees_by_name[normalizedName];
+        }
+        console.log(`[DEBUG Odoo Cache] Sin coincidencia de nombre '${normalizedName}' en hr.employee.`);
+    } else {
+        console.log(`[DEBUG Odoo Cache] No existe res.users con login '${keyEmail}'.`);
     }
     
-    console.log(`[DEBUG Odoo Cache] Could not find employee for email: ${email}`);
+    console.log(`[DEBUG Odoo Cache] No se pudo resolver employee_id para: ${email}`);
     return null;
 }
 
