@@ -300,8 +300,14 @@ app.post("/api/monitor", async (req, res) => {
                 correo_empleado      = EXCLUDED.correo_empleado,
                 ultima_actualizacion = EXCLUDED.ultima_actualizacion;
         `;
-        console.log(`Monitor registrado: ${d.serial} -> ${correo || 'sin empleado'}`);
-        res.status(200).json({ status: "success", serial: d.serial });
+        res.status(200).json({
+            status: "success",
+            serial: d.serial,
+            marca: d.marca || null,
+            modelo: d.modelo || null,
+            id_hardware: d.id_hardware || null,
+            correo_empleado: correo
+        });
     } catch (error) {
         console.error("Error en /api/monitor:", error.message);
         res.status(500).json({ error: error.message });

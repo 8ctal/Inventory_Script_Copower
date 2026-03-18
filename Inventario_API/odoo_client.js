@@ -123,9 +123,13 @@ async function refreshCache() {
 
 function resolveUserId(possibleNameOrEmail) {
     if (!possibleNameOrEmail) return null;
-    let keyEmail = possibleNameOrEmail.toLowerCase();
+    const trimmed = possibleNameOrEmail.toString().trim();
+    if (!trimmed) return null;
+
+    const keyEmail = trimmed.toLowerCase();
     if (cache.users_by_login[keyEmail]) return cache.users_by_login[keyEmail];
-    let keyName = normalize(possibleNameOrEmail);
+
+    const keyName = normalize(trimmed);
     return cache.users_by_name[keyName] || null;
 }
 
@@ -150,7 +154,12 @@ function resolveEmployeeId(email) {
         console.log(`[DEBUG Odoo Cache] No email provided to resolveEmployeeId.`);
         return null;
     }
-    const keyEmail = email.toLowerCase();
+    const trimmed = email.toString().trim();
+    if (!trimmed) {
+        console.log(`[DEBUG Odoo Cache] Empty email after trim in resolveEmployeeId.`);
+        return null;
+    }
+    const keyEmail = trimmed.toLowerCase();
 
     // Paso 1: work_email directo en hr.employee
     if (cache.employees_by_email[keyEmail]) {

@@ -74,7 +74,7 @@ try {
         }
     }
 
-    # Pre-poblar datos si se seleccionó un monitor detectado
+    # Pre-poblar datos si se seleccionó un monitor detectado (solo como referencia)
     $datosMonitor = @{ Marca = ""; Modelo = ""; Serial = ""; IdHardware = "" }
     
     if ($monitorSeleccionado) {
@@ -85,27 +85,39 @@ try {
         $datosMonitor.IdHardware = $parsed.RawId
     }
 
-    # ---- Formulario editable ----
+    # ---- Mostrar información recolectada (solo referencia) ----
     Write-Host ""
-    Write-Host "--- DATOS DEL MONITOR (Editable) ---" -ForegroundColor Yellow
+    Write-Host "--- INFORMACION RECOLECTADA (referencia) ---" -ForegroundColor Yellow
+    Write-Host "Marca:    $($datosMonitor.Marca)" -ForegroundColor White
+    Write-Host "Modelo:   $($datosMonitor.Modelo)" -ForegroundColor White
+    Write-Host "Serial:   $($datosMonitor.Serial)" -ForegroundColor White
+    Write-Host "Hardware: $($datosMonitor.IdHardware)" -ForegroundColor White
+
+    # ---- Carga manual ----
+    Write-Host ""
+    Write-Host "--- CARGA MANUAL DE DATOS DEL MONITOR ---" -ForegroundColor Yellow
     Write-Host ""
 
-    Write-Host "Marca (actual: '$($datosMonitor.Marca)')" -ForegroundColor White
-    $input = Read-Host "Presione Enter para mantener o escriba la marca"
-    if ($input.Trim() -ne "") { $datosMonitor.Marca = $input.Trim() }
+    $marcaInput = Read-Host "Marca (referencia: '$($datosMonitor.Marca)') (Enter para omitir)"
+    if ($marcaInput.Trim() -eq "") {
+        $datosMonitor.Marca = $null
+    } else {
+        $datosMonitor.Marca = $marcaInput.Trim()
+    }
 
-    Write-Host "Modelo (actual: '$($datosMonitor.Modelo)')" -ForegroundColor White
-    $input = Read-Host "Presione Enter para mantener o escriba el modelo"
-    if ($input.Trim() -ne "") { $datosMonitor.Modelo = $input.Trim() }
+    $modeloInput = Read-Host "Modelo (referencia: '$($datosMonitor.Modelo)') (Enter para omitir)"
+    if ($modeloInput.Trim() -eq "") {
+        $datosMonitor.Modelo = $null
+    } else {
+        $datosMonitor.Modelo = $modeloInput.Trim()
+    }
 
-    Write-Host "Serial (actual: '$($datosMonitor.Serial)')" -ForegroundColor White
-    $input = Read-Host "Presione Enter para mantener o escriba el serial"
-    if ($input.Trim() -ne "") { $datosMonitor.Serial = $input.Trim() }
-
-    if (-not $datosMonitor.Serial -or $datosMonitor.Serial -eq "") {
+    $serialInput = Read-Host "Serial (referencia: '$($datosMonitor.Serial)') (requerido)"
+    if ($serialInput.Trim() -eq "") {
         Write-Host "ERROR: El serial es obligatorio." -ForegroundColor Red
         exit 1
     }
+    $datosMonitor.Serial = $serialInput.Trim()
 
     # ---- Empleado ----
     Write-Host ""
@@ -129,7 +141,7 @@ try {
         serial          = $datosMonitor.Serial
         marca           = $datosMonitor.Marca
         modelo          = $datosMonitor.Modelo
-        id_hardware     = $datosMonitor.IdHardware
+        id_hardware     = $(if ($datosMonitor.IdHardware.Trim() -eq '') { $null } else { $datosMonitor.IdHardware })
         correo_empleado = $correoEmpleado
     }
 

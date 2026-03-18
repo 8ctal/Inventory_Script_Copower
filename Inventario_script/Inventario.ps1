@@ -194,13 +194,53 @@ try {
     
     Write-Host ""
     Write-Host "--- DATOS PARA ODOO ---" -ForegroundColor Yellow
-    Write-Host "Proveedor del equipo [Ej. Lenovo, Dell, etc.]" -ForegroundColor White
-    $proveedor = Read-Host "Escriba el proveedor (o presione Enter para omitir)"
-    if ($proveedor.Trim() -ne "") { $Payload.proveedor = $proveedor.Trim() }
 
-    Write-Host "Categoria del equipo [Ej. EQUIPO DE COMPUTO, Impresoras, etc.]" -ForegroundColor White
-    $categoria = Read-Host "Escriba la categoria (o presione Enter para omitir)"
-    if ($categoria.Trim() -ne "") { $Payload.categoria = $categoria.Trim() }
+    # Opciones controladas para mejorar el match con Odoo (cache por nombre)
+    $categoriasOpciones = @(
+        @{ id = 25; name = 'EQUIPO-DE-COMPUTO' },
+        @{ id = 26; name = 'IMPRESORAS' },
+        @{ id = 27; name = 'TELEFONO-CELULAR' },
+        @{ id = 28; name = 'MONITORES' }
+    )
+    $proveedorOpciones = @(
+        @{ id = 57796; name = 'ACTIVIDADES ECONOMICAS INDUSTRIA Y COMERCIO/ LENOVO' }
+    )
+
+    Write-Host "Proveedor del equipo (opcion única):" -ForegroundColor White
+    foreach ($p in $proveedorOpciones) {
+        Write-Host "  [$($p.id)] $($p.name)" -ForegroundColor Gray
+    }
+    $proveedorInput = Read-Host "Seleccione proveedor por id (o presione Enter para omitir)"
+    if ($proveedorInput.Trim() -ne "") {
+        if ($proveedorInput.Trim() -notmatch '^\d+$') {
+            Write-Host "Proveedor invalido. Debe seleccionar el id de la opcion." -ForegroundColor Red
+            exit 1
+        }
+        $proveedorSel = $proveedorOpciones | Where-Object { $_.id -eq [int]$proveedorInput.Trim() }
+        if (-not $proveedorSel) {
+            Write-Host "Proveedor invalido. Id no reconocido." -ForegroundColor Red
+            exit 1
+        }
+        $Payload.proveedor = $proveedorSel.name
+    }
+
+    Write-Host "Categoria del equipo (opciones):" -ForegroundColor White
+    foreach ($c in $categoriasOpciones) {
+        Write-Host "  [$($c.id)] $($c.name)" -ForegroundColor Gray
+    }
+    $categoriaInput = Read-Host "Seleccione categoria por id (o presione Enter para omitir)"
+    if ($categoriaInput.Trim() -ne "") {
+        if ($categoriaInput.Trim() -notmatch '^\d+$') {
+            Write-Host "Categoria invalida. Debe seleccionar el id de la opcion." -ForegroundColor Red
+            exit 1
+        }
+        $categoriaSel = $categoriasOpciones | Where-Object { $_.id -eq [int]$categoriaInput.Trim() }
+        if (-not $categoriaSel) {
+            Write-Host "Categoria invalida. Id no reconocido." -ForegroundColor Red
+            exit 1
+        }
+        $Payload.categoria = $categoriaSel.name
+    }
 
     Write-Host ""
     Write-Host "Presione Enter para enviar los datos o Ctrl+C para cancelar..." -ForegroundColor Cyan
@@ -214,7 +254,7 @@ try {
     
     # Actualizar el payload con los datos editados
     $Payload.empleado_actual = $empleadoActual
-    $Payload.usuario = $empleadoActual.nombre
+    $Payload.usuario = $empleadoActual.correo_empresarial
     
     # Actualizar timestamp antes de enviar
     $Payload.timestamp_machine = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
