@@ -1,0 +1,62 @@
+﻿[dotenv@17.2.3] injecting env (10) from .env -- tip: ­ƒøá´©Å  run anywhere with `dotenvx run -- yourcommand`
+Conectando a Odoo...
+Conectado exitosamente.
+
+--- BUSCANDO EN hr.employee ---
+Se encontraron 297 empleados activos.
+
+No se encontr├│ ning├║n empleado en hr.employee con ese correo o nombre.
+
+Muestra de 5 empleados (para ver qu├® campos arroja Odoo):
+[
+  {
+    "id": 160,
+    "name": "ABRAHAM ISAAC BURGOS CELIS",
+    "work_email": false,
+    "user_id": false,
+    "user_partner_id": false
+  },
+  {
+    "id": 161,
+    "name": "ADIER MARIN ARCILA",
+    "work_email": false,
+    "user_id": false,
+    "user_partner_id": false
+  },
+  {
+    "id": 164,
+    "name": "ADRIAN ENRIQUE ORTEGA DELGADO",
+    "work_email": false,
+    "user_id": false,
+    "user_partner_id": false
+  },
+  {
+    "id": 166,
+    "name": "ADRIAN LEONARDO VELASCO ARIZA",
+    "work_email": false,
+    "user_id": false,
+    "user_partner_id": false
+  },
+  {
+    "id": 168,
+    "name": "ALBAN ESQUIVEL NARVAEZ",
+    "work_email": false,
+    "user_id": false,
+    "user_partner_id": false
+  }
+]
+
+--- BUSCANDO EN res.users ---
+Se encontraron 134 usuarios activos.
+Resultados de la b├║squeda manual en res.users (login con 'profesionalti'):
+[
+  {
+    "id": 452,
+    "name": "JUAN CAMILO JAIMES AVILA",
+    "login": "profesionalTI@copower.com.co",
+    "partner_id": [
+      70233,
+      "JUAN CAMILO JAIMES AVILA"
+    ]
+  }
+]
