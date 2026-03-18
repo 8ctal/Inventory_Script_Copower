@@ -10,6 +10,7 @@ const odoo = new Odoo({
 
 let cache = {
     users_by_login: {},
+    users_by_login_local_domain: {},
     users_by_name: {},
     users_name_by_login: {},
     users_login_by_id: {},        // id -> login (para cruce con hr.employee)
@@ -65,11 +66,23 @@ async function refreshCache() {
         // Users
         const users = await executeKw('res.users', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'login'] });
         cache.users_by_login = {};
+        cache.users_by_login_local_domain = {};
         cache.users_by_name = {};
         cache.users_name_by_login = {};
         cache.users_login_by_id = {};
         users.forEach(u => {
-            if (u.login) cache.users_by_login[u.login.toLowerCase()] = u.id;
+            if (u.login) {
+                const loginLower = u.login.toLowerCase();
+                cache.users_by_login[loginLower] = u.id;
+
+                const parts = loginLower.split('@');
+                const localPart = parts[0] || '';
+                const domainPart = parts.length > 1 ? parts.slice(1).join('@') : '';
+                if (localPart && domainPart) {
+                    if (!cache.users_by_login_local_domain[localPart]) cache.users_by_login_local_domain[localPart] = {};
+                    cache.users_by_login_local_domain[localPart][domainPart] = u.id;
+                }
+            }
             if (u.name) cache.users_by_name[normalize(u.name)] = u.id;
             if (u.login && u.name) cache.users_name_by_login[u.login.toLowerCase()] = u.name;
             if (u.id && u.login) cache.users_login_by_id[u.id] = u.login.toLowerCase();
@@ -161,21 +174,35 @@ function resolveEmployeeId(email) {
     }
     const keyEmail = trimmed.toLowerCase();
 
-    // Paso 1: work_email directo en hr.employee
+    // Paso 1: match directo por res.users.login y luego derivar hr.employee desde el user_id precargado
+    if (cache.users_by_login[keyEmail]) {
+        const userId = cache.users_by_login[keyEmail];
+        if (cache.employees_by_user_id[userId]) {
+            console.log(`[DEBUG Odoo Cache] MATCH via res.users.login -> hr.employee.user_id (precargado) -> employee ID ${cache.employees_by_user_id[userId]}`);
+            return cache.employees_by_user_id[userId];
+        }
+    }
+
+    // Paso 2: match por split local@domain (misma lógica, con keys preindexadas)
+    const parts = keyEmail.split('@');
+    const localPart = parts[0] || '';
+    const domainPart = parts.length > 1 ? parts.slice(1).join('@') : '';
+    if (localPart && domainPart && cache.users_by_login_local_domain[localPart] && cache.users_by_login_local_domain[localPart][domainPart]) {
+        const userId = cache.users_by_login_local_domain[localPart][domainPart];
+        if (cache.employees_by_user_id[userId]) {
+            console.log(`[DEBUG Odoo Cache] MATCH via res.users.login local@domain -> employee ID ${cache.employees_by_user_id[userId]}`);
+            return cache.employees_by_user_id[userId];
+        }
+    }
+
+    // Paso 3 (fallback): work_email directo en hr.employee
     if (cache.employees_by_email[keyEmail]) {
         console.log(`[DEBUG Odoo Cache] MATCH via hr.employee.work_email -> employee ID ${cache.employees_by_email[keyEmail]}`);
         return cache.employees_by_email[keyEmail];
     }
-    console.log(`[DEBUG Odoo Cache] No match by work_email.`);
+    console.log(`[DEBUG Odoo Cache] No match direct por login; sin match por split login; fallback falló por work_email.`);
 
-    // Paso 2: login de res.users cruzado con user_id de hr.employee (directo en caché)
-    if (cache.employees_by_user_login[keyEmail]) {
-        console.log(`[DEBUG Odoo Cache] MATCH via res.users.login -> hr.employee.user_id -> employee ID ${cache.employees_by_user_login[keyEmail]}`);
-        return cache.employees_by_user_login[keyEmail];
-    }
-    console.log(`[DEBUG Odoo Cache] No match via res.users.login cruzado con user_id (user_id puede estar vacío en Odoo).`);
-
-    // Paso 3 (fallback): nombre del usuario en res.users contra nombre en hr.employee
+    // Paso 4 (fallback): nombre del usuario en res.users contra nombre en hr.employee
     const userName = cache.users_name_by_login[keyEmail];
     if (userName) {
         const normalizedName = normalize(userName);

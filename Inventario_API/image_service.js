@@ -8,8 +8,14 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+function debugLog(...args) {
+    const enabled = process.env.IMAGE_SERVICE_DEBUG === '1' || process.env.IMAGE_SERVICE_DEBUG === 'true';
+    if (enabled) console.log('[image_service]', ...args);
+}
+
 async function findImageOnSerper(query) {
     try {
+        debugLog('Serper query:', query);
         let data = JSON.stringify({ "q": query });
         let config = {
             method: 'post',
@@ -24,7 +30,9 @@ async function findImageOnSerper(query) {
         const response = await axios.request(config);
         if (response.data && response.data.images && response.data.images.length > 0) {
             // Retorna la URL de la primera imagen encontrada
-            return response.data.images[0].imageUrl;
+            const imageUrl = response.data.images[0].imageUrl;
+            debugLog('Serper result imageUrl found:', Boolean(imageUrl));
+            return imageUrl;
         }
         return null;
     } catch (error) {
@@ -45,10 +53,14 @@ async function findImageOnCloudinary(modelo) {
     // Nuevo esquema solicitado: /inventario_equipos/maquinas
     const maquinaPublicId = `inventario_equipos/maquinas/${publicId}`;
     try {
+        debugLog('Cloudinary lookup:', { modelo, publicId, maquinaPublicId });
         const resource = await cloudinary.api.resource(maquinaPublicId, { resource_type: 'image' });
-        return resource.secure_url || null;
+        const secureUrl = resource.secure_url || null;
+        debugLog('Cloudinary lookup result:', Boolean(secureUrl));
+        return secureUrl;
     } catch (error) {
         // Si no existe, Cloudinary típicamente responde 404; cualquier error => no encontrado para permitir fallback a Serper.
+        debugLog('Cloudinary lookup not found (or error):', error && error.message ? error.message : error);
         return null;
     }
 }
@@ -81,8 +93,12 @@ async function processDeviceImage(marca, modelo) {
     if (!modelo) return null;
 
     // 1) Cache persistente: si ya existe en Cloudinary, no consultamos Serper.
+    debugLog('processDeviceImage start:', { marca, modelo });
     const cloudinaryUrl = await findImageOnCloudinary(modelo);
-    if (cloudinaryUrl) return cloudinaryUrl;
+    if (cloudinaryUrl) {
+        debugLog('Using Cloudinary cached url');
+        return cloudinaryUrl;
+    }
 
     // 2) Si no existe, buscamos en Serper.
     const query = `${marca} ${modelo} laptop`;
@@ -90,7 +106,9 @@ async function processDeviceImage(marca, modelo) {
     if (!serperUrl) return null;
 
     // 3) Subimos a Cloudinary y devolvemos URL.
+    debugLog('Uploading to Cloudinary from Serper...');
     const uploadedUrl = await uploadToCloudinary(serperUrl, modelo);
+    debugLog('UploadedUrl exists:', Boolean(uploadedUrl));
     return uploadedUrl;
 }
 

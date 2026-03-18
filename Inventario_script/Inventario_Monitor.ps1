@@ -45,10 +45,9 @@ try {
     # Obtener monitores, excluir los integrados/genéricos
     $monitores = Get-CimInstance Win32_PnPEntity | Where-Object {
         $_.Service -eq "monitor" -and
-        $_.Caption -notmatch "Integrado|Integrated|Internal|Generic|PnP|ACPI"
     } | Select-Object @{N="Nombre"; E={$_.Caption}},
                       @{N="Estado"; E={$_.Status}},
-                      @{N="PNPDeviceID"; E={$_.PNPDeviceID}}
+                      @{N="PNPDeviceID"; E={$_.PNPDeviceID}} | Format-Table -AutoSize
 
     if (-not $monitores -or $monitores.Count -eq 0) {
         Write-Host "No se detectaron monitores externos." -ForegroundColor Red
