@@ -45,7 +45,7 @@ function executeKw(model, method, params, kwargs = {}) {
         }
 
         try {
-            odoo.execute_kw(model, method, fparams, function(err, value) {
+            odoo.execute_kw(model, method, fparams, function (err, value) {
                 if (err) {
                     return reject(err);
                 }
@@ -61,7 +61,7 @@ async function refreshCache() {
     try {
         console.log("Refreshing Odoo Cache...");
         await connect();
-        
+
         // Users
         const users = await executeKw('res.users', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'login'] });
         cache.users_by_login = {};
@@ -151,21 +151,21 @@ function resolveEmployeeId(email) {
         return null;
     }
     const keyEmail = email.toLowerCase();
-    
+
     // Paso 1: work_email directo en hr.employee
     if (cache.employees_by_email[keyEmail]) {
         console.log(`[DEBUG Odoo Cache] MATCH via hr.employee.work_email -> employee ID ${cache.employees_by_email[keyEmail]}`);
         return cache.employees_by_email[keyEmail];
     }
     console.log(`[DEBUG Odoo Cache] No match by work_email.`);
-    
+
     // Paso 2: login de res.users cruzado con user_id de hr.employee (directo en caché)
     if (cache.employees_by_user_login[keyEmail]) {
         console.log(`[DEBUG Odoo Cache] MATCH via res.users.login -> hr.employee.user_id -> employee ID ${cache.employees_by_user_login[keyEmail]}`);
         return cache.employees_by_user_login[keyEmail];
     }
     console.log(`[DEBUG Odoo Cache] No match via res.users.login cruzado con user_id (user_id puede estar vacío en Odoo).`);
-    
+
     // Paso 3 (fallback): nombre del usuario en res.users contra nombre en hr.employee
     const userName = cache.users_name_by_login[keyEmail];
     if (userName) {
@@ -179,7 +179,7 @@ function resolveEmployeeId(email) {
     } else {
         console.log(`[DEBUG Odoo Cache] No existe res.users con login '${keyEmail}'.`);
     }
-    
+
     console.log(`[DEBUG Odoo Cache] No se pudo resolver employee_id para: ${email}`);
     return null;
 }

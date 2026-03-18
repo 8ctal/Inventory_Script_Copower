@@ -246,7 +246,7 @@ app.post("/validate", async (req, res) => {
         const resUser = odooClient.resolveUserId(usuario);
         const resPartner = odooClient.resolvePartnerId(proveedor);
         const resCategory = odooClient.resolveCategoryId(categoria);
-        
+
         res.status(200).json({
             usuario: resUser ? { id: resUser, found: true } : { found: false },
             proveedor: resPartner ? { id: resPartner, found: true } : { found: false },
