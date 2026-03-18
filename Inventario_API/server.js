@@ -273,8 +273,72 @@ app.post("/image", async (req, res) => {
 });
 
 app.post("/sync", async (req, res) => {
-    // Sincronización manual bajo demanda si algún equipo falló, se podría hacer aquí llamando Odoo
-    res.status(200).json({ message: "Sync manual endpoint: En desarrollo. La sync ocurre automáticamente en /api/inventario." });
+    res.status(200).json({ message: "Sync manual endpoint: En desarrollo." });
+});
+
+// ---- Monitores ----
+app.post("/api/monitor", async (req, res) => {
+    try {
+        const d = req.body;
+        if (!d.serial) return res.status(400).json({ error: "El campo 'serial' es requerido." });
+
+        const timestamp = new Date().toISOString();
+        const correo = d.correo_empleado || null;
+
+        if (correo) {
+            const emp = await sql`SELECT correo_empresarial FROM empleados WHERE correo_empresarial = ${correo} LIMIT 1`;
+            if (emp.length === 0) return res.status(400).json({ error: `Empleado '${correo}' no encontrado.` });
+        }
+
+        await sql`
+            INSERT INTO inventario_monitores (serial, marca, modelo, id_hardware, correo_empleado, ultima_actualizacion)
+            VALUES (${d.serial}, ${d.marca || null}, ${d.modelo || null}, ${d.id_hardware || null}, ${correo}, ${timestamp}::timestamp)
+            ON CONFLICT (serial) DO UPDATE SET
+                marca                = EXCLUDED.marca,
+                modelo               = EXCLUDED.modelo,
+                id_hardware          = EXCLUDED.id_hardware,
+                correo_empleado      = EXCLUDED.correo_empleado,
+                ultima_actualizacion = EXCLUDED.ultima_actualizacion;
+        `;
+        console.log(`Monitor registrado: ${d.serial} -> ${correo || 'sin empleado'}`);
+        res.status(200).json({ status: "success", serial: d.serial });
+    } catch (error) {
+        console.error("Error en /api/monitor:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ---- Celulares ----
+app.post("/api/celular", async (req, res) => {
+    try {
+        const d = req.body;
+        if (!d.serial) return res.status(400).json({ error: "El campo 'serial' es requerido." });
+
+        const timestamp = new Date().toISOString();
+        const correo = d.correo_empleado || null;
+
+        if (correo) {
+            const emp = await sql`SELECT correo_empresarial FROM empleados WHERE correo_empresarial = ${correo} LIMIT 1`;
+            if (emp.length === 0) return res.status(400).json({ error: `Empleado '${correo}' no encontrado.` });
+        }
+
+        await sql`
+            INSERT INTO inventario_celulares (serial, marca, modelo, imei, numero_linea, correo_empleado, ultima_actualizacion)
+            VALUES (${d.serial}, ${d.marca || null}, ${d.modelo || null}, ${d.imei || null}, ${d.numero_linea || null}, ${correo}, ${timestamp}::timestamp)
+            ON CONFLICT (serial) DO UPDATE SET
+                marca                = EXCLUDED.marca,
+                modelo               = EXCLUDED.modelo,
+                imei                 = EXCLUDED.imei,
+                numero_linea         = EXCLUDED.numero_linea,
+                correo_empleado      = EXCLUDED.correo_empleado,
+                ultima_actualizacion = EXCLUDED.ultima_actualizacion;
+        `;
+        console.log(`Celular registrado: ${d.serial} -> ${correo || 'sin empleado'}`);
+        res.status(200).json({ status: "success", serial: d.serial });
+    } catch (error) {
+        console.error("Error en /api/celular:", error.message);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 app.post("/webhook/odoo", async (req, res) => {
