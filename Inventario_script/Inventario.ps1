@@ -9,6 +9,7 @@
 # Aqu pondremos la direccin de tu "servidor" o Google Sheet ms adelante.
 # Por ahora, dejaremos esto pendiente.
 $UrlEndpoint = "http://192.168.20.5:3000/api/inventario" 
+$EmployeeSearchEndpoint = "http://192.168.20.5:3000/api/employee_search"
 
 try {
     Write-Host "--- RECOPILANDO INFORMACIN (Espere un momento...) ---" -ForegroundColor Cyan
@@ -148,6 +149,41 @@ try {
     $nuevoNombre = Read-Host
     if ($nuevoNombre.Trim() -ne "") {
         $empleadoActual.nombre = $nuevoNombre.Trim()
+    }
+
+    # Listado de coincidencias por primer nombre (para facilitar elegir el correo correcto)
+    $firstNameQuery = ($empleadoActual.nombre -split '\s+' | Select-Object -First 1)
+    if ($firstNameQuery -and $firstNameQuery.Trim() -ne "") {
+        try {
+            $payloadSearch = @{ firstName = $firstNameQuery.Trim() }
+            $bodySearch = $payloadSearch | ConvertTo-Json -Depth 5 -Compress
+            $searchResp = Invoke-RestMethod -Uri $EmployeeSearchEndpoint -Method Post -Body $bodySearch -ContentType "application/json"
+            $results = $searchResp.results
+
+            if ($results -and $results.Count -gt 0) {
+                Write-Host ""
+                Write-Host "--- Coincidencias para '$firstNameQuery' (elige si deseas) ---" -ForegroundColor Yellow
+                $idx = 1
+                foreach ($r in $results) {
+                    $we = $null
+                    if ($r.work_email) { $we = $r.work_email } else { $we = "(sin work_email)" }
+                    Write-Host "  [$idx] $($r.name) - $we" -ForegroundColor Gray
+                    $idx++
+                }
+                $selCorreo = Read-Host "Seleccione el numero para cargar el correo (Enter para omitir)"
+                if ($selCorreo.Trim() -ne "" -and $selCorreo.Trim() -match '^\d+$') {
+                    $selInt = [int]$selCorreo.Trim()
+                    if ($selInt -ge 1 -and $selInt -le $results.Count) {
+                        $selected = $results[$selInt - 1]
+                        if ($selected.work_email -and $selected.work_email.ToString().Trim() -ne "") {
+                            $empleadoActual.correo_empresarial = $selected.work_email.ToString().Trim()
+                        }
+                    }
+                }
+            }
+        } catch {
+            Write-Host "No se pudo consultar coincidencias por primer nombre: $($_.Exception.Message)" -ForegroundColor Red
+        }
     }
     
     # Correo empresarial

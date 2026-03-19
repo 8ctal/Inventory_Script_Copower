@@ -1,0 +1,108 @@
+{
+  "generatedAt": "2026-03-19T14:42:22.377Z",
+  "counts": {
+    "resUsersActive": 135,
+    "hrEmployeesActive": 296,
+    "hrEmployeesWithWorkEmail": 107,
+    "hrEmployeesWithUserId": 103,
+    "hrWorkEmailNotInResUsers": 8
+  },
+  "testEmails": [
+    {
+      "email": "alvarojotavera@gmail.com",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 1253,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 1253,
+        "name": "ALVARO JOSE VERA VERGARA",
+        "work_email": "alvarojotavera@gmail.com"
+      }
+    },
+    {
+      "email": "coordinacioncontable@copower.com.co",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 187,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 187,
+        "name": "ANDREA PAOLA ANDRADE DURAN",
+        "work_email": "coordinacioncontable@copower.com.co"
+      }
+    },
+    {
+      "email": "notiene@gmail.com@gmail.com",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 189,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 189,
+        "name": "ANDRES CAMILO MEDINA RODRIGUEZ",
+        "work_email": "notiene@gmail.com@GMAIL.COM"
+      }
+    },
+    {
+      "email": "opsengtermocentro@copower.com.co",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 197,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 197,
+        "name": "ANGEL ELIAS RIOS VALLEJO",
+        "work_email": "opsengtermocentro@copower.com.co"
+      }
+    },
+    {
+      "email": "georgy.samuel26gmail.com",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 313,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 313,
+        "name": "GEORGY SAMUEL GARCIA CALA",
+        "work_email": "georgy.samuel26gmail.com"
+      }
+    },
+    {
+      "email": "ivonmazo18@gmail.com",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 340,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 340,
+        "name": "IVONE ANDREA GOMEZ MAZO",
+        "work_email": "ivonmazo18@gmail.com"
+      }
+    },
+    {
+      "email": "jairograss@gmail.com",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 342,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 342,
+        "name": "JAIRO ANDRES GRASS ARENAS",
+        "work_email": "jairograss@gmail.com"
+      }
+    },
+    {
+      "email": "marsan2229@hotmail.com",
+      "resUsersHasLogin": false,
+      "hrHasWorkEmail": true,
+      "resolvedEmployeeId": 1118,
+      "resolvedVia": "hr.employee.work_email",
+      "matchedEmployee": {
+        "id": 1118,
+        "name": "JOSE MARCELO RIASCOS SOLIS",
+        "work_email": "Marsan2229@hotmail.com"
+      }
+    }
+  ]
+}

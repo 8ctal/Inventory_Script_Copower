@@ -257,6 +257,21 @@ app.post("/validate", async (req, res) => {
     }
 });
 
+app.post("/api/employee_search", async (req, res) => {
+    try {
+        const { firstName } = req.body;
+        if (!firstName || !firstName.toString().trim()) {
+            return res.status(400).json({ error: "Falta firstName" });
+        }
+
+        const results = await odooClient.searchEmployeesByFirstName(firstName);
+        res.status(200).json({ results });
+    } catch (error) {
+        console.error("Error en /api/employee_search:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post("/image", async (req, res) => {
     try {
         const { marca, modelo } = req.body;

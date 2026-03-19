@@ -20,7 +20,8 @@ let cache = {
     employees_by_user_id: {},
     employees_by_email: {},
     employees_by_name: {},
-    employees_by_user_login: {}   // res.users.login -> hr.employee.id (cruce directo)
+    employees_by_user_login: {},  // res.users.login -> hr.employee.id (cruce directo)
+    employees_list: []            // cache para búsquedas manuales (nombre/primer nombre)
 };
 
 function normalize(s) {
@@ -111,6 +112,7 @@ async function refreshCache() {
 
         // Employees
         const employees = await executeKw('hr.employee', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'work_email', 'user_id'] });
+        cache.employees_list = employees;
         cache.employees_by_user_id = {};
         cache.employees_by_email = {};
         cache.employees_by_name = {};
@@ -132,6 +134,36 @@ async function refreshCache() {
     } catch (error) {
         console.error("Error refreshing Odoo cache:", error);
     }
+}
+
+async function searchEmployeesByFirstName(firstName) {
+    const trimmed = firstName ? firstName.toString().trim() : '';
+    if (!trimmed) return [];
+
+    // Si el cache no está listo aún, lo refrescamos una vez.
+    if (!cache.employees_list || cache.employees_list.length === 0) {
+        await refreshCache();
+    }
+
+    const normalizedRequested = normalize(trimmed);
+    const requestedFirstToken = normalizedRequested.split(' ')[0];
+    if (!requestedFirstToken) return [];
+
+    const matches = (cache.employees_list || [])
+        .filter(e => {
+            if (!e || !e.name) return false;
+            const normalizedEmployeeName = normalize(e.name);
+            const employeeFirstToken = normalizedEmployeeName.split(' ')[0] || '';
+            return employeeFirstToken === requestedFirstToken || normalizedEmployeeName.startsWith(requestedFirstToken);
+        })
+        .map(e => ({
+            id: e.id,
+            name: e.name,
+            work_email: e.work_email || null
+        }))
+        .slice(0, 10);
+
+    return matches;
 }
 
 function resolveUserId(possibleNameOrEmail) {
@@ -262,6 +294,7 @@ module.exports = {
     resolvePartnerId,
     resolveTeamId,
     resolveEmployeeId,
+    searchEmployeesByFirstName,
     createEquipment,
     updateEquipment
 };

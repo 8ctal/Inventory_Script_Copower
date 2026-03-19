@@ -1,5 +1,7 @@
-require('dotenv').config();
-const odooClient = require('./odoo_client'); // ajusta la ruta
+const path = require('path');
+const fs = require('fs');
+require(path.join(__dirname, '..', 'Inventario_API', 'node_modules', 'dotenv')).config({ path: path.join(__dirname, '..', 'Inventario_API', '.env') });
+const odooClient = require('../Inventario_API/odoo_client'); // ajusta la ruta
 
 async function runTests() {
     try {

@@ -1,5 +1,7 @@
-require('dotenv').config();
-const Odoo = require('odoo-xmlrpc');
+const path = require('path');
+const fs = require('fs');
+require(path.join(__dirname, '..', 'Inventario_API', 'node_modules', 'dotenv')).config({ path: path.join(__dirname, '..', 'Inventario_API', '.env') });
+const Odoo = require(path.join(__dirname, '..', 'Inventario_API', 'node_modules', 'odoo-xmlrpc'));
 
 const odoo = new Odoo({
     url: process.env.ODOO_URL,
@@ -36,21 +38,75 @@ function executeKw(model, method, params, kwargs = {}) {
 }
 
 async function testEmployees() {
-    const EMAIL_TO_TEST = 'profesionalTI@copower.com.co';
-
     try {
+        const OUTPUT_PATH = path.join(__dirname, 'outputs', 'test_output_latest.json');
+
         console.log("Conectando a Odoo...");
         await connect();
         console.log("Conectado exitosamente.\n");
+
+        function resolveEmployeeIdForEmail(emailKey, ctx) {
+            const keyEmail = emailKey.toLowerCase();
+            const parts = keyEmail.split('@');
+            const localPart = parts[0] || '';
+            const domainPart = parts.length > 1 ? parts.slice(1).join('@') : '';
+
+            // Paso 1: match directo por res.users.login
+            if (ctx.users_by_login[keyEmail]) {
+                const userId = ctx.users_by_login[keyEmail];
+                if (ctx.employees_by_user_id[userId]) {
+                    return { employeeId: ctx.employees_by_user_id[userId], via: 'res.users.login->hr.employee.user_id' };
+                }
+                return { employeeId: null, via: 'res.users.login->missing hr.employee.user_id' };
+            }
+
+            // Paso 2: match por local@domain
+            if (localPart && domainPart &&
+                ctx.users_by_login_local_domain[localPart] &&
+                ctx.users_by_login_local_domain[localPart][domainPart]
+            ) {
+                const userId = ctx.users_by_login_local_domain[localPart][domainPart];
+                if (ctx.employees_by_user_id[userId]) {
+                    return { employeeId: ctx.employees_by_user_id[userId], via: 'res.users.login local@domain->hr.employee.user_id' };
+                }
+                return { employeeId: null, via: 'res.users.login local@domain->missing hr.employee.user_id' };
+            }
+
+            // Paso 3: match directo por hr.employee.work_email
+            if (ctx.employees_by_email[keyEmail]) {
+                return { employeeId: ctx.employees_by_email[keyEmail], via: 'hr.employee.work_email' };
+            }
+
+            // Paso 4: fallback por nombre (cuando el email existe en res.users)
+            const userName = ctx.users_name_by_login[keyEmail];
+            if (userName) {
+                const normalizedName = normalize(userName);
+                if (ctx.employees_by_name[normalizedName]) {
+                    return { employeeId: ctx.employees_by_name[normalizedName], via: 'res.users.login->name fallback' };
+                }
+            }
+
+            return { employeeId: null, via: 'not_found' };
+        }
 
         // Load users
         const users = await executeKw('res.users', 'search_read', [[['active', '=', true]]], { fields: ['id', 'name', 'login'] });
         const users_by_login = {};
         const users_name_by_login = {};
+        const users_by_login_local_domain = {};
         users.forEach(u => {
             if (u.login) {
-                users_by_login[u.login.toLowerCase()] = u.id;
-                users_name_by_login[u.login.toLowerCase()] = u.name;
+                const loginLower = u.login.toLowerCase();
+                users_by_login[loginLower] = u.id;
+                users_name_by_login[loginLower] = u.name;
+
+                const parts = loginLower.split('@');
+                const localPart = parts[0] || '';
+                const domainPart = parts.length > 1 ? parts.slice(1).join('@') : '';
+                if (localPart && domainPart) {
+                    if (!users_by_login_local_domain[localPart]) users_by_login_local_domain[localPart] = {};
+                    users_by_login_local_domain[localPart][domainPart] = u.id;
+                }
             }
         });
         console.log(`Total res.users activos: ${users.length}`);
@@ -71,49 +127,80 @@ async function testEmployees() {
         console.log(`  -> Con work_email: ${empWithEmail.length}`);
         console.log(`  -> Con user_id vinculado: ${empWithUserId.length}\n`);
 
-        // Simulate 3-step resolution
-        const emailKey = EMAIL_TO_TEST.toLowerCase();
-        console.log(`=== Simulando resolveEmployeeId('${EMAIL_TO_TEST}') ===`);
+        const ctx = {
+            users_by_login,
+            users_name_by_login,
+            users_by_login_local_domain,
+            employees_by_email,
+            employees_by_user_id,
+            employees_by_name
+        };
 
-        // Step 1
-        if (employees_by_email[emailKey]) {
-            console.log(`[PASO 1] EXITO por work_email -> employee_id: ${employees_by_email[emailKey]}`);
-            return;
+        const uniqueHrEmails = [...new Set(employees.filter(e => e.work_email).map(e => e.work_email.toLowerCase()))];
+        const hrEmailsNotInResUsers = uniqueHrEmails.filter(email => !users_by_login[email]);
+
+        const loginOnlyCandidates = Object.entries(users_by_login)
+            .map(([email, userId]) => {
+                const employeeId = employees_by_user_id[userId];
+                if (!employeeId) return null;
+                const emp = employees.find(e => e.id === employeeId);
+                const hasWorkEmail = Boolean(emp && emp.work_email);
+                return { email, userId, employeeId, hasWorkEmail };
+            })
+            .filter(Boolean)
+            .filter(x => x.hasWorkEmail === false);
+
+        const testEmails = [];
+        // Empleados que NO están en res.users pero SI tienen work_email (caso que te interesa)
+        testEmails.push(...hrEmailsNotInResUsers.slice(0, 8));
+        // Empleados que SI están en res.users pero con work_email faltante (para comprobar login->user_id)
+        testEmails.push(...loginOnlyCandidates.slice(0, 3).map(x => x.email));
+
+        const dedupedTestEmails = [...new Set(testEmails)];
+
+        const results = {
+            generatedAt: new Date().toISOString(),
+            counts: {
+                resUsersActive: users.length,
+                hrEmployeesActive: employees.length,
+                hrEmployeesWithWorkEmail: empWithEmail.length,
+                hrEmployeesWithUserId: empWithUserId.length,
+                hrWorkEmailNotInResUsers: hrEmailsNotInResUsers.length
+            },
+            testEmails: dedupedTestEmails.map(email => {
+                const resUsersHasLogin = Boolean(users_by_login[email]);
+                const hrHasWorkEmail = Boolean(employees_by_email[email]);
+
+                const resolved = resolveEmployeeIdForEmail(email, ctx);
+                const matchedEmployee = resolved.employeeId
+                    ? employees.find(e => e.id === resolved.employeeId) || null
+                    : null;
+
+                return {
+                    email,
+                    resUsersHasLogin,
+                    hrHasWorkEmail,
+                    resolvedEmployeeId: resolved.employeeId,
+                    resolvedVia: resolved.via,
+                    matchedEmployee: matchedEmployee
+                        ? { id: matchedEmployee.id, name: matchedEmployee.name, work_email: matchedEmployee.work_email || null }
+                        : null
+                };
+            })
+        };
+
+        fs.writeFileSync(OUTPUT_PATH, JSON.stringify(results, null, 2), 'utf8');
+        console.log(`\nOK: resultados escritos en: ${OUTPUT_PATH}`);
+
+        const resolvedCount = results.testEmails.filter(t => t.resolvedEmployeeId).length;
+        console.log(`Resoluciones exitosas: ${resolvedCount}/${results.testEmails.length}\n`);
+
+        // Muestra los casos fallidos al final (más útil que spamear todo)
+        const failed = results.testEmails.filter(t => !t.resolvedEmployeeId).slice(0, 10);
+        if (failed.length > 0) {
+            console.log('Primeros casos no resueltos:');
+            failed.forEach(f => console.log(`  ${f.email} -> via=${f.resolvedVia} (resUsersHasLogin=${f.resUsersHasLogin}, hrHasWorkEmail=${f.hrHasWorkEmail})`));
         }
-        console.log(`[PASO 1] No encontrado por work_email.`);
-
-        // Step 2
-        const userId = users_by_login[emailKey];
-        if (userId) {
-            console.log(`[PASO 2] Usuario encontrado en res.users -> user.id: ${userId}, user.name: ${users_name_by_login[emailKey]}`);
-            if (employees_by_user_id[userId]) {
-                console.log(`[PASO 2] EXITO por user_id -> employee_id: ${employees_by_user_id[userId]}`);
-                return;
-            }
-            console.log(`[PASO 2] hr.employee no tiene user_id vinculado a ${userId}.`);
-
-            // Step 3: name fallback
-            const userName = users_name_by_login[emailKey];
-            const normalizedName = normalize(userName);
-            console.log(`[PASO 3] Intentando por nombre: '${userName}' -> normalizado: '${normalizedName}'`);
-            if (employees_by_name[normalizedName]) {
-                console.log(`[PASO 3] EXITO por nombre -> employee_id: ${employees_by_name[normalizedName]}`);
-
-                const matchedEmp = employees.find(e => normalize(e.name) === normalizedName);
-                console.log(`\nEmpleado encontrado:`);
-                console.log(JSON.stringify(matchedEmp, null, 2));
-                return;
-            }
-            console.log(`[PASO 3] No hay coincidencia de nombre '${normalizedName}' en hr.employee.`);
-            
-            // Show some normalized names for debugging
-            console.log(`\nMuestra de nombres normalizados en hr.employee (para detectar discrepancias):`);
-            employees.slice(0, 10).forEach(e => console.log(`  '${e.name}' => '${normalize(e.name)}'`));
-        } else {
-            console.log(`[PASO 2] No existe res.users con login '${emailKey}'.`);
-        }
-
-        console.log(`\nRESULTADO FINAL: No se pudo resolver employee_id para '${EMAIL_TO_TEST}'.`);
 
     } catch (err) {
         console.error("Error consultando a Odoo:", err);
