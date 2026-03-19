@@ -51,8 +51,41 @@ try {
     # ---- Empleado ----
     Write-Host ""
     Write-Host "--- ASIGNACION DE EMPLEADO ---" -ForegroundColor Yellow
-    $correoEmpleado = Read-Host "Correo empresarial del empleado (o Enter para dejar sin asignar)"
-    if ($correoEmpleado.Trim() -eq "") { $correoEmpleado = $null }
+    $cacheDir = Join-Path $env:LOCALAPPDATA "COPOWER_INVENTARIO_CACHE"
+    $cacheFile = Join-Path $cacheDir "empleado.json"
+    $empleadoPrevio = $null
+    try {
+        if (Test-Path $cacheFile) {
+            $empleadoPrevio = Get-Content $cacheFile -Raw | ConvertFrom-Json
+        }
+    } catch {
+        $empleadoPrevio = $null
+    }
+
+    $correoEmpleado = $null
+    if ($empleadoPrevio -and $empleadoPrevio.correo) {
+        Write-Host "Empleado anterior detectado: $($empleadoPrevio.correo)" -ForegroundColor Gray
+        $usarPrevio = Read-Host "¿Usar empleado anterior? (Enter=Si, n=No)"
+        if ($usarPrevio.Trim() -eq "" -or $usarPrevio.Trim().ToLower() -eq 's') {
+            $correoEmpleado = $empleadoPrevio.correo.Trim()
+        }
+    }
+
+    if (-not $correoEmpleado) {
+        $correoEmpleado = Read-Host "Correo empresarial del empleado (o Enter para dejar sin asignar)"
+        if ($correoEmpleado.Trim() -eq "") { $correoEmpleado = $null }
+    }
+
+    # Guardar cache del empleado
+    try {
+        if ($correoEmpleado) {
+            if (!(Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir | Out-Null }
+            $cacheObj = @{ correo = $correoEmpleado }
+            $cacheObj | ConvertTo-Json -Depth 3 | Set-Content -Path $cacheFile -Encoding UTF8
+        }
+    } catch {
+        # No bloquear flujo del inventario si falla el cache
+    }
 
     # ---- Confirmacion ----
     Write-Host ""

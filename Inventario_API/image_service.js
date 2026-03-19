@@ -107,12 +107,13 @@ async function getBase64FromUrl(url) {
 }
 
 async function processDeviceImage(marca, modelo, deviceType) {
+    debugLog('processDeviceImage start:', { marca, modelo, deviceType });
     if (!modelo) return null;
 
     const { querySuffix } = getDeviceTypeConfig(deviceType);
 
     // 1) Cache persistente: si ya existe en Cloudinary, no consultamos Serper.
-    debugLog('processDeviceImage start:', { marca, modelo, deviceType, querySuffix });
+    debugLog('processDeviceImage querySuffix:', { querySuffix });
     const cloudinaryUrl = await findImageOnCloudinary(modelo, deviceType);
     if (cloudinaryUrl) {
         debugLog('Using Cloudinary cached url');

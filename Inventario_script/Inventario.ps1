@@ -308,6 +308,19 @@ try {
     # Actualizar timestamp antes de enviar
     $Payload.timestamp_machine = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
 
+    # Persist employee email locally for reuse by other scripts (monitor/celular)
+    try {
+        if ($empleadoActual.correo_empresarial) {
+            $cacheDir = Join-Path $env:LOCALAPPDATA "COPOWER_INVENTARIO_CACHE"
+            $cacheFile = Join-Path $cacheDir "empleado.json"
+            if (!(Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir | Out-Null }
+            $cacheObj = @{ correo = $empleadoActual.correo_empresarial }
+            $cacheObj | ConvertTo-Json -Depth 3 | Set-Content -Path $cacheFile -Encoding UTF8
+        }
+    } catch {
+        # Do not block inventory flow if cache write fails
+    }
+
     # ENVO
     Write-Host ""
     Write-Host "Enviando datos al servidor..." -ForegroundColor Cyan

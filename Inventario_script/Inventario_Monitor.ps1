@@ -26,9 +26,17 @@ function Parse-MonitorPnP {
     }
     if ($parts.Count -ge 3) {
         # El tercer segmento contiene el serial embebido al inicio (antes del &)
-        $serialSegment = $parts[2] -split "&" | Select-Object -First 1
-        if ($serialSegment) {
-            $result.Serial = $serialSegment.Trim()
+        $serialTokens = ($parts[2] -split "&") | Where-Object { $_ -and $_.Trim() -ne '' }
+
+        # En muchos casos el primer token es la instancia (ej: '4') y el siguiente token contiene el ID real (ej: '2F225CD1')
+        # Por eso preferimos el primer token que tenga al menos una letra (A-Z).
+        $alphaToken = $serialTokens | Where-Object { $_ -match '[A-Za-z]' } | Select-Object -First 1
+        $fallbackToken = $serialTokens | Select-Object -First 1
+
+        $chosen = $null
+        if ($alphaToken) { $chosen = $alphaToken } else { $chosen = $fallbackToken }
+        if ($chosen) {
+            $result.Serial = $chosen.Trim()
         }
     }
     return $result
@@ -113,6 +121,15 @@ try {
         $datosMonitor.Modelo = $modeloInput.Trim()
     }
 
+    # Para que la carga de imagen a Odoo funcione, necesitamos un modelo no-vacío
+    while (-not $datosMonitor.Modelo -or $datosMonitor.Modelo.Trim() -eq "") {
+        Write-Host "Modelo requerido para buscar imagen en Cloudinary/Serper." -ForegroundColor Red
+        $modeloInput = Read-Host "Ingrese Modelo (ej: A0EC)"
+        if ($modeloInput.Trim() -ne "") {
+            $datosMonitor.Modelo = $modeloInput.Trim()
+        }
+    }
+
     while ($true) {
         $serialInput = Read-Host "Serial (referencia: '$($datosMonitor.Serial)') (Enter para usar referencia)"
         if ($serialInput.Trim() -eq "") {
@@ -128,10 +145,44 @@ try {
     }
 
     # ---- Empleado ----
+    # Cache local para reutilizar el mismo empleado entre PC/Monitor/Celular
+    $cacheDir = Join-Path $env:LOCALAPPDATA "COPOWER_INVENTARIO_CACHE"
+    $cacheFile = Join-Path $cacheDir "empleado.json"
+    $empleadoPrevio = $null
+    try {
+        if (Test-Path $cacheFile) {
+            $empleadoPrevio = Get-Content $cacheFile -Raw | ConvertFrom-Json
+        }
+    } catch {
+        $empleadoPrevio = $null
+    }
+
     Write-Host ""
     Write-Host "--- ASIGNACION DE EMPLEADO ---" -ForegroundColor Yellow
-    $correoEmpleado = Read-Host "Correo empresarial del empleado (o Enter para dejar sin asignar)"
-    if ($correoEmpleado.Trim() -eq "") { $correoEmpleado = $null }
+    $correoEmpleado = $null
+    if ($empleadoPrevio -and $empleadoPrevio.correo) {
+        Write-Host "Empleado anterior detectado: $($empleadoPrevio.correo)" -ForegroundColor Gray
+        $usarPrevio = Read-Host "¿Usar empleado anterior? (Enter=Si, n=No)"
+        if ($usarPrevio.Trim() -eq "" -or $usarPrevio.Trim().ToLower() -eq 's') {
+            $correoEmpleado = $empleadoPrevio.correo.Trim()
+        }
+    }
+
+    if (-not $correoEmpleado) {
+        $correoEmpleado = Read-Host "Correo empresarial del empleado (o Enter para dejar sin asignar)"
+        if ($correoEmpleado.Trim() -eq "") { $correoEmpleado = $null }
+    }
+
+    # Guardar cache del empleado para reutilizarlo en el siguiente dispositivo
+    try {
+        if ($correoEmpleado) {
+            if (!(Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir | Out-Null }
+            $cacheObj = @{ correo = $correoEmpleado }
+            $cacheObj | ConvertTo-Json -Depth 3 | Set-Content -Path $cacheFile -Encoding UTF8
+        }
+    } catch {
+        # Si falla el cache, no bloqueamos el flujo del inventario
+    }
 
     # ---- Confirmacion ----
     Write-Host ""
