@@ -162,61 +162,82 @@ function resolveTeamId(teamName) {
 }
 
 function resolveEmployeeId(email) {
-    console.log(`[DEBUG Odoo Cache] Resolving employee ID for: ${email}`);
+    const debugEnabled = process.env.ODOO_CLIENT_DEBUG === '1' || process.env.ODOO_CLIENT_DEBUG === 'true';
+    const debugLog = (...args) => {
+        if (debugEnabled) console.log('[DEBUG Odoo Cache]', ...args);
+    };
+
+    debugLog(`Resolving employee ID for: ${email}`);
     if (!email) {
-        console.log(`[DEBUG Odoo Cache] No email provided to resolveEmployeeId.`);
+        debugLog('No email provided to resolveEmployeeId.');
         return null;
     }
     const trimmed = email.toString().trim();
     if (!trimmed) {
-        console.log(`[DEBUG Odoo Cache] Empty email after trim in resolveEmployeeId.`);
+        debugLog('Empty email after trim in resolveEmployeeId.');
         return null;
     }
     const keyEmail = trimmed.toLowerCase();
+    debugLog('keyEmail:', keyEmail);
+
+    const parts = keyEmail.split('@');
+    const localPart = parts[0] || '';
+    const domainPart = parts.length > 1 ? parts.slice(1).join('@') : '';
+    debugLog('split login local/domain:', { localPart, domainPart });
 
     // Paso 1: match directo por res.users.login y luego derivar hr.employee desde el user_id precargado
     if (cache.users_by_login[keyEmail]) {
         const userId = cache.users_by_login[keyEmail];
+        debugLog('MATCH via res.users.login -> userId:', userId);
         if (cache.employees_by_user_id[userId]) {
-            console.log(`[DEBUG Odoo Cache] MATCH via res.users.login -> hr.employee.user_id (precargado) -> employee ID ${cache.employees_by_user_id[userId]}`);
+            const employeeId = cache.employees_by_user_id[userId];
+            debugLog('MATCH via userId -> hr.employee.user_id (precargado) -> employeeId:', employeeId);
             return cache.employees_by_user_id[userId];
         }
+        debugLog('Found users_by_login but no employee for that userId in cache:', userId);
     }
 
     // Paso 2: match por split local@domain (misma lógica, con keys preindexadas)
-    const parts = keyEmail.split('@');
-    const localPart = parts[0] || '';
-    const domainPart = parts.length > 1 ? parts.slice(1).join('@') : '';
-    if (localPart && domainPart && cache.users_by_login_local_domain[localPart] && cache.users_by_login_local_domain[localPart][domainPart]) {
+    if (localPart && domainPart &&
+        cache.users_by_login_local_domain[localPart] &&
+        cache.users_by_login_local_domain[localPart][domainPart]
+    ) {
         const userId = cache.users_by_login_local_domain[localPart][domainPart];
+        debugLog('MATCH via res.users.login local@domain -> userId:', userId);
         if (cache.employees_by_user_id[userId]) {
-            console.log(`[DEBUG Odoo Cache] MATCH via res.users.login local@domain -> employee ID ${cache.employees_by_user_id[userId]}`);
+            const employeeId = cache.employees_by_user_id[userId];
+            debugLog('MATCH via local@domain userId -> employeeId:', employeeId);
             return cache.employees_by_user_id[userId];
         }
+        debugLog('Found local@domain -> userId but no employee for that userId in cache:', userId);
+    } else {
+        debugLog('No match via local@domain preindex.');
     }
 
     // Paso 3 (fallback): work_email directo en hr.employee
     if (cache.employees_by_email[keyEmail]) {
-        console.log(`[DEBUG Odoo Cache] MATCH via hr.employee.work_email -> employee ID ${cache.employees_by_email[keyEmail]}`);
+        const employeeId = cache.employees_by_email[keyEmail];
+        debugLog('MATCH via hr.employee.work_email -> employeeId:', employeeId);
         return cache.employees_by_email[keyEmail];
     }
-    console.log(`[DEBUG Odoo Cache] No match direct por login; sin match por split login; fallback falló por work_email.`);
+    debugLog('No match by login/local@domain; fallback by work_email did not match.');
 
     // Paso 4 (fallback): nombre del usuario en res.users contra nombre en hr.employee
     const userName = cache.users_name_by_login[keyEmail];
     if (userName) {
         const normalizedName = normalize(userName);
-        console.log(`[DEBUG Odoo Cache] Intentando fallback por nombre: '${userName}' -> normalizado: '${normalizedName}'`);
+        debugLog(`Fallback by users_name_by_login: userName='${userName}' normalized='${normalizedName}'`);
         if (cache.employees_by_name[normalizedName]) {
-            console.log(`[DEBUG Odoo Cache] MATCH via nombre -> employee ID ${cache.employees_by_name[normalizedName]}`);
+            const employeeId = cache.employees_by_name[normalizedName];
+            debugLog('MATCH via normalized user name -> employeeId:', employeeId);
             return cache.employees_by_name[normalizedName];
         }
-        console.log(`[DEBUG Odoo Cache] Sin coincidencia de nombre '${normalizedName}' en hr.employee.`);
+        debugLog(`No employee match for normalizedName '${normalizedName}'.`);
     } else {
-        console.log(`[DEBUG Odoo Cache] No existe res.users con login '${keyEmail}'.`);
+        debugLog(`No res.users entry for login '${keyEmail}'.`);
     }
 
-    console.log(`[DEBUG Odoo Cache] No se pudo resolver employee_id para: ${email}`);
+    debugLog(`No se pudo resolver employee_id para: ${email}`);
     return null;
 }
 
