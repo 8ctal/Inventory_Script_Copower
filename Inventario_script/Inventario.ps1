@@ -278,6 +278,19 @@ try {
         $Payload.categoria = $categoriaSel.name
     }
 
+    # Costo manual (opcional). Si se deja en blanco, el backend usará su default.
+    Write-Host ""
+    Write-Host "Costo del equipo (opcional, Enter para default $3500000):" -ForegroundColor White
+    $costoInput = Read-Host "Ingrese costo (numero)"
+    if ($costoInput.Trim() -ne "") {
+        $costoStr = $costoInput.Trim().Replace(',', '.')
+        if ($costoStr -notmatch '^\d+(\.\d+)?$') {
+            Write-Host "Costo invalido. Solo se permiten numeros." -ForegroundColor Red
+            exit 1
+        }
+        $Payload.costo = [double]$costoStr
+    }
+
     Write-Host ""
     Write-Host "Presione Enter para enviar los datos o Ctrl+C para cancelar..." -ForegroundColor Cyan
     Read-Host

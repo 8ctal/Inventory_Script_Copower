@@ -161,7 +161,7 @@ async function searchEmployeesByFirstName(firstName) {
             name: e.name,
             work_email: e.work_email || null
         }))
-        .slice(0, 10);
+        .slice(0, 30);
 
     return matches;
 }

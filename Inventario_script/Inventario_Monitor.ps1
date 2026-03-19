@@ -27,8 +27,8 @@ function Parse-MonitorPnP {
     if ($parts.Count -ge 3) {
         # El tercer segmento contiene el serial embebido al inicio (antes del &)
         $serialSegment = $parts[2] -split "&" | Select-Object -First 1
-        if ($serialSegment -and $serialSegment -notmatch "^\d+$") {
-            $result.Serial = $serialSegment
+        if ($serialSegment) {
+            $result.Serial = $serialSegment.Trim()
         }
     }
     return $result
@@ -44,10 +44,12 @@ try {
 
     # Obtener monitores, excluir los integrados/genéricos
     $monitores = Get-CimInstance Win32_PnPEntity | Where-Object {
-        $_.Service -eq "monitor" -and
+        $_.Service -eq "monitor" -and $_.Caption
     } | Select-Object @{N="Nombre"; E={$_.Caption}},
                       @{N="Estado"; E={$_.Status}},
-                      @{N="PNPDeviceID"; E={$_.PNPDeviceID}} | Format-Table -AutoSize
+                      @{N="PNPDeviceID"; E={$_.PNPDeviceID}}
+
+    $monitores | Format-Table -AutoSize
 
     if (-not $monitores -or $monitores.Count -eq 0) {
         Write-Host "No se detectaron monitores externos." -ForegroundColor Red
@@ -111,12 +113,19 @@ try {
         $datosMonitor.Modelo = $modeloInput.Trim()
     }
 
-    $serialInput = Read-Host "Serial (referencia: '$($datosMonitor.Serial)') (requerido)"
-    if ($serialInput.Trim() -eq "") {
-        Write-Host "ERROR: El serial es obligatorio." -ForegroundColor Red
-        exit 1
+    while ($true) {
+        $serialInput = Read-Host "Serial (referencia: '$($datosMonitor.Serial)') (Enter para usar referencia)"
+        if ($serialInput.Trim() -eq "") {
+            if ($datosMonitor.Serial -and $datosMonitor.Serial.Trim() -ne "") {
+                break
+            }
+            Write-Host "ERROR: El serial es obligatorio (no se detecto referencia). Intenta de nuevo." -ForegroundColor Red
+            continue
+        }
+
+        $datosMonitor.Serial = $serialInput.Trim()
+        break
     }
-    $datosMonitor.Serial = $serialInput.Trim()
 
     # ---- Empleado ----
     Write-Host ""
@@ -140,7 +149,7 @@ try {
         serial          = $datosMonitor.Serial
         marca           = $datosMonitor.Marca
         modelo          = $datosMonitor.Modelo
-        id_hardware     = $(if ($datosMonitor.IdHardware.Trim() -eq '') { $null } else { $datosMonitor.IdHardware })
+        id_hardware     = $(if ([string]::IsNullOrWhiteSpace($datosMonitor.IdHardware)) { $null } else { $datosMonitor.IdHardware.Trim() })
         correo_empleado = $correoEmpleado
     }
 

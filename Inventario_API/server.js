@@ -20,6 +20,18 @@ async function bootstrap() {
             ADD COLUMN IF NOT EXISTS image_url TEXT,
             ADD COLUMN IF NOT EXISTS synced BOOLEAN DEFAULT false;
         `;
+        await sql`
+            ALTER TABLE inventario_monitores
+            ADD COLUMN IF NOT EXISTS odoo_id INT,
+            ADD COLUMN IF NOT EXISTS image_url TEXT,
+            ADD COLUMN IF NOT EXISTS synced BOOLEAN DEFAULT false;
+        `;
+        await sql`
+            ALTER TABLE inventario_celulares
+            ADD COLUMN IF NOT EXISTS odoo_id INT,
+            ADD COLUMN IF NOT EXISTS image_url TEXT,
+            ADD COLUMN IF NOT EXISTS synced BOOLEAN DEFAULT false;
+        `;
         console.log("DB Schema updated correctly.");
         await odooClient.refreshCache();
     } catch (err) {
@@ -195,8 +207,8 @@ app.post("/api/inventario", async (req, res) => {
                     display_name: `${d.fabricante} ${d.modelo} - ${d.serial}`,
                     serial_no: d.serial,
                     model: d.modelo,
-                    location: d.ip_local || '',
-                    cost: d.costo || 0,
+                    location: 'Bucaramanga, Santander, Colombia',
+                    cost: d.costo || 3500000,
                     rental_cost: d.costo_renta || 0,
                     note: `<p>Hostname: ${d.hostname || ''}<br/>SO: ${d.sistema_op || ''} ${d.sistema_version || ''}<br/>RAM: ${d.ram_gb || ''}GB<br/>Procesador: ${d.procesador || ''}<br/>Disco: ${d.disco_total_gb || ''}GB</p>`,
                     assign_date: timestamp.split('T')[0], // YYYY-MM-DD
@@ -206,7 +218,8 @@ app.post("/api/inventario", async (req, res) => {
                     maintenance_duration: 1.0,
                     image_1920: imageBase64 || false,
                     active: true,
-                    day_last_maintenance_done: timestamp.split('T')[0],
+                    // Fecha fija solicitada (formato ISO para Odoo)
+                    day_last_maintenance_done: '2025-12-25',
                     partner_id: proveedorOdooId || false,
                     category_id: categoriaOdooId || false,
                     technician_user_id: odooClient.resolveUserId('sistemas@copower.com.co') || false,
@@ -315,6 +328,64 @@ app.post("/api/monitor", async (req, res) => {
                 correo_empleado      = EXCLUDED.correo_empleado,
                 ultima_actualizacion = EXCLUDED.ultima_actualizacion;
         `;
+
+        // Odoo Sync Logic Asynchronously (monitores)
+        setTimeout(async () => {
+            try {
+                const emailToResolve = d.correo_empleado || null;
+                const empleadoOdooId = odooClient.resolveUserId(emailToResolve) || null;
+                const employeeId = odooClient.resolveEmployeeId(emailToResolve) || null;
+
+                const categoriaOdooId = odooClient.resolveCategoryId('MONITORES') || null;
+
+                console.log(`[Odoo Sync] Creando equipo MONITOR para serial ${d.serial}...`);
+
+                // 1) Buscar imagen (Cloudinary primero, luego Serper si hace falta)
+                console.log(`[Odoo Sync] Buscando imagen para ${d.marca} ${d.modelo} (monitor)...`);
+                const imageUrl = await imageService.processDeviceImage(d.marca, d.modelo, 'monitor');
+                let imageBase64 = null;
+                if (imageUrl) {
+                    imageBase64 = await imageService.getBase64FromUrl(imageUrl);
+                }
+
+                // 2) Crear equipo en Odoo
+                const equipmentData = {
+                    name: `${d.marca || ''} ${d.modelo || ''} - ${d.serial}`,
+                    display_name: `${d.marca || ''} ${d.modelo || ''} - ${d.serial}`,
+                    serial_no: d.serial,
+                    model: d.modelo,
+                    location: 'Bucaramanga, Santander, Colombia',
+                    note: `<p>Hardware ID: ${d.id_hardware || ''}</p>`,
+                    assign_date: timestamp.split('T')[0],
+                    effective_date: timestamp.split('T')[0],
+                    period: 90,
+                    maintenance_duration: 1.0,
+                    image_1920: imageBase64 || false,
+                    active: true,
+                    day_last_maintenance_done: '2025-12-25',
+                    partner_id: false,
+                    category_id: categoriaOdooId || false,
+                    technician_user_id: odooClient.resolveUserId('sistemas@copower.com.co') || false,
+                    maintenance_team_id: odooClient.resolveTeamId('TECNOLOGIA') || false,
+                    owner_user_id: empleadoOdooId || false,
+                    employee_id: employeeId || false
+                };
+
+                const odooId = await odooClient.createEquipment(equipmentData);
+                console.log(`Equipo MONITOR creado en Odoo con ID: ${odooId}`);
+
+                // 3) Actualizar Neon DB con estado sync
+                await sql`
+                    UPDATE inventario_monitores
+                    SET odoo_id = ${odooId}, image_url = ${imageUrl}, synced = true
+                    WHERE serial = ${d.serial};
+                `;
+                console.log(`Neon DB sync actualizado para MONITOR serial ${d.serial}`);
+            } catch (syncErr) {
+                console.error(`Error sincronizando MONITOR a Odoo para ${d.serial}:`, syncErr.message);
+            }
+        }, 100);
+
         res.status(200).json({
             status: "success",
             serial: d.serial,
@@ -354,6 +425,64 @@ app.post("/api/celular", async (req, res) => {
                 correo_empleado      = EXCLUDED.correo_empleado,
                 ultima_actualizacion = EXCLUDED.ultima_actualizacion;
         `;
+
+        // Odoo Sync Logic Asynchronously (celulares)
+        setTimeout(async () => {
+            try {
+                const emailToResolve = d.correo_empleado || null;
+                const empleadoOdooId = odooClient.resolveUserId(emailToResolve) || null;
+                const employeeId = odooClient.resolveEmployeeId(emailToResolve) || null;
+
+                const categoriaOdooId = odooClient.resolveCategoryId('TELEFONO-CELULAR') || null;
+
+                console.log(`[Odoo Sync] Creando equipo CELULAR para serial ${d.serial}...`);
+
+                // 1) Buscar imagen (Cloudinary primero, luego Serper si hace falta)
+                console.log(`[Odoo Sync] Buscando imagen para ${d.marca} ${d.modelo} (celular)...`);
+                const imageUrl = await imageService.processDeviceImage(d.marca, d.modelo, 'celular');
+                let imageBase64 = null;
+                if (imageUrl) {
+                    imageBase64 = await imageService.getBase64FromUrl(imageUrl);
+                }
+
+                // 2) Crear equipo en Odoo
+                const equipmentData = {
+                    name: `${d.marca || ''} ${d.modelo || ''} - ${d.serial}`,
+                    display_name: `${d.marca || ''} ${d.modelo || ''} - ${d.serial}`,
+                    serial_no: d.serial,
+                    model: d.modelo,
+                    location: 'Bucaramanga, Santander, Colombia',
+                    note: `<p>IMEI: ${d.imei || ''}<br/>Linea: ${d.numero_linea || ''}</p>`,
+                    assign_date: timestamp.split('T')[0],
+                    effective_date: timestamp.split('T')[0],
+                    period: 90,
+                    maintenance_duration: 1.0,
+                    image_1920: imageBase64 || false,
+                    active: true,
+                    day_last_maintenance_done: '2025-12-25',
+                    partner_id: false,
+                    category_id: categoriaOdooId || false,
+                    technician_user_id: odooClient.resolveUserId('sistemas@copower.com.co') || false,
+                    maintenance_team_id: odooClient.resolveTeamId('TECNOLOGIA') || false,
+                    owner_user_id: empleadoOdooId || false,
+                    employee_id: employeeId || false
+                };
+
+                const odooId = await odooClient.createEquipment(equipmentData);
+                console.log(`Equipo CELULAR creado en Odoo con ID: ${odooId}`);
+
+                // 3) Actualizar Neon DB con estado sync
+                await sql`
+                    UPDATE inventario_celulares
+                    SET odoo_id = ${odooId}, image_url = ${imageUrl}, synced = true
+                    WHERE serial = ${d.serial};
+                `;
+                console.log(`Neon DB sync actualizado para CELULAR serial ${d.serial}`);
+            } catch (syncErr) {
+                console.error(`Error sincronizando CELULAR a Odoo para ${d.serial}:`, syncErr.message);
+            }
+        }, 100);
+
         console.log(`Celular registrado: ${d.serial} -> ${correo || 'sin empleado'}`);
         res.status(200).json({ status: "success", serial: d.serial });
     } catch (error) {

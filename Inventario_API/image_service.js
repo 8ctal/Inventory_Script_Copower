@@ -46,15 +46,31 @@ function getPublicIdFromModelName(modelName) {
     return modelName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 }
 
-async function findImageOnCloudinary(modelo) {
+function getDeviceTypeConfig(deviceType) {
+    const type = (deviceType ? deviceType.toString().trim().toLowerCase() : 'laptop');
+
+    // Folder/prefix en Cloudinary (tal como pediste)
+    if (type === 'monitor' || type === 'monitores') {
+        return { folder: 'inventario_equipos/monitores', querySuffix: 'monitor' };
+    }
+
+    if (type === 'celular' || type === 'celulares' || type === 'phone' || type === 'phones') {
+        return { folder: 'inventario_equipos/celulares', querySuffix: 'celular' };
+    }
+
+    // Default: laptop/computadoras
+    return { folder: 'inventario_equipos/maquinas', querySuffix: 'laptop' };
+}
+
+async function findImageOnCloudinary(modelo, deviceType) {
     const publicId = getPublicIdFromModelName(modelo);
     if (!publicId) return null;
 
-    // Nuevo esquema solicitado: /inventario_equipos/maquinas
-    const maquinaPublicId = `inventario_equipos/maquinas/${publicId}`;
+    const { folder } = getDeviceTypeConfig(deviceType);
+    const devicePublicId = `${folder}/${publicId}`;
     try {
-        debugLog('Cloudinary lookup:', { modelo, publicId, maquinaPublicId });
-        const resource = await cloudinary.api.resource(maquinaPublicId, { resource_type: 'image' });
+        debugLog('Cloudinary lookup:', { modelo, publicId, devicePublicId });
+        const resource = await cloudinary.api.resource(devicePublicId, { resource_type: 'image' });
         const secureUrl = resource.secure_url || null;
         debugLog('Cloudinary lookup result:', Boolean(secureUrl));
         return secureUrl;
@@ -65,11 +81,12 @@ async function findImageOnCloudinary(modelo) {
     }
 }
 
-async function uploadToCloudinary(imageUrl, modelName) {
+async function uploadToCloudinary(imageUrl, modelName, deviceType) {
     try {
+        const { folder } = getDeviceTypeConfig(deviceType);
         const publicId = modelName ? getPublicIdFromModelName(modelName) : undefined;
         const result = await cloudinary.uploader.upload(imageUrl, {
-            folder: 'inventario_equipos/maquinas',
+            folder,
             public_id: publicId
         });
         return result.secure_url;
@@ -89,25 +106,27 @@ async function getBase64FromUrl(url) {
     }
 }
 
-async function processDeviceImage(marca, modelo) {
+async function processDeviceImage(marca, modelo, deviceType) {
     if (!modelo) return null;
 
+    const { querySuffix } = getDeviceTypeConfig(deviceType);
+
     // 1) Cache persistente: si ya existe en Cloudinary, no consultamos Serper.
-    debugLog('processDeviceImage start:', { marca, modelo });
-    const cloudinaryUrl = await findImageOnCloudinary(modelo);
+    debugLog('processDeviceImage start:', { marca, modelo, deviceType, querySuffix });
+    const cloudinaryUrl = await findImageOnCloudinary(modelo, deviceType);
     if (cloudinaryUrl) {
         debugLog('Using Cloudinary cached url');
         return cloudinaryUrl;
     }
 
     // 2) Si no existe, buscamos en Serper.
-    const query = `${marca} ${modelo} laptop`;
+    const query = `${marca} ${modelo} ${querySuffix}`;
     const serperUrl = await findImageOnSerper(query);
     if (!serperUrl) return null;
 
     // 3) Subimos a Cloudinary y devolvemos URL.
     debugLog('Uploading to Cloudinary from Serper...');
-    const uploadedUrl = await uploadToCloudinary(serperUrl, modelo);
+    const uploadedUrl = await uploadToCloudinary(serperUrl, modelo, deviceType);
     debugLog('UploadedUrl exists:', Boolean(uploadedUrl));
     return uploadedUrl;
 }
