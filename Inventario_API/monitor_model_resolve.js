@@ -24,9 +24,16 @@ const URL_SEGMENT_BLACKLIST = [
     'GLOBAL', 'INDEX', 'FLAT', 'PAGES', 'SPEC', 'PRODUCT'
 ];
 
-function normalizeKeyPart(value) {
+/**
+ * Neon/Postgres UTF-8 text rejects NUL (0x00). WMI -> JSON from PowerShell can include embedded nulls.
+ */
+function sanitizePgText(value) {
     if (value === undefined || value === null) return '';
-    return String(value).trim().toLowerCase();
+    return String(value).replace(/\0/g, '').trim();
+}
+
+function normalizeKeyPart(value) {
+    return sanitizePgText(value).toLowerCase();
 }
 
 function buildMonitorCacheKey(manufacturer, model, productCode) {
@@ -38,9 +45,10 @@ function buildMonitorCacheKey(manufacturer, model, productCode) {
 }
 
 function vendorToDisplayBrand(manufacturerCode) {
-    if (!manufacturerCode) return '';
-    const code = String(manufacturerCode).trim().toUpperCase().slice(0, 3);
-    return VENDOR_MAP[code] || String(manufacturerCode).trim();
+    const raw = sanitizePgText(manufacturerCode);
+    if (!raw) return '';
+    const code = raw.toUpperCase().slice(0, 3);
+    return VENDOR_MAP[code] || raw;
 }
 
 function extractModelFromUrl(url) {
@@ -165,13 +173,13 @@ async function upsertCache(sql, row) {
  * @param {{ manufacturer: string, model?: string|null, productCode?: string|null }} input
  */
 async function resolveMonitorCommercialModel(sql, input) {
-    const manufacturer = input.manufacturer;
-    if (!manufacturer || !String(manufacturer).trim()) {
+    const manufacturer = sanitizePgText(input.manufacturer);
+    if (!manufacturer) {
         throw new Error('manufacturer is required');
     }
 
-    const modelHw = input.model != null ? String(input.model) : '';
-    const productCode = input.productCode != null ? String(input.productCode) : '';
+    const modelHw = sanitizePgText(input.model != null ? input.model : '');
+    const productCode = sanitizePgText(input.productCode != null ? input.productCode : '');
 
     const cacheKey = buildMonitorCacheKey(manufacturer, modelHw, productCode);
     const cached = await lookupCache(sql, cacheKey);
@@ -182,13 +190,13 @@ async function resolveMonitorCommercialModel(sql, input) {
             from_cache: true,
             cache_key: cacheKey,
             brand_display: brandDisplay,
-            manufacturer_hw: cached.manufacturer_hw,
-            model_hw: cached.model_hw,
-            product_code: cached.product_code,
-            commercial_model: cached.commercial_model,
-            reference_code: cached.reference_code,
-            official_url: cached.official_url,
-            serper_title: cached.serper_title
+            manufacturer_hw: sanitizePgText(cached.manufacturer_hw) || null,
+            model_hw: sanitizePgText(cached.model_hw) || null,
+            product_code: sanitizePgText(cached.product_code) || null,
+            commercial_model: sanitizePgText(cached.commercial_model) || null,
+            reference_code: sanitizePgText(cached.reference_code) || null,
+            official_url: sanitizePgText(cached.official_url) || null,
+            serper_title: sanitizePgText(cached.serper_title) || null
         };
     }
 
@@ -196,32 +204,33 @@ async function resolveMonitorCommercialModel(sql, input) {
 
     await upsertCache(sql, {
         cache_key: cacheKey,
-        manufacturer_hw: String(manufacturer).trim(),
+        manufacturer_hw: manufacturer,
         model_hw: modelHw || null,
         product_code: productCode || null,
-        commercial_model: serp.commercial_model,
-        reference_code: serp.reference_code,
-        official_url: serp.official_url,
-        serper_title: serp.serper_title
+        commercial_model: sanitizePgText(serp.commercial_model) || null,
+        reference_code: sanitizePgText(serp.reference_code) || null,
+        official_url: sanitizePgText(serp.official_url) || null,
+        serper_title: sanitizePgText(serp.serper_title) || null
     });
 
     return {
         from_cache: false,
         cache_key: cacheKey,
         brand_display: brandDisplay,
-        manufacturer_hw: String(manufacturer).trim(),
+        manufacturer_hw: manufacturer,
         model_hw: modelHw || null,
         product_code: productCode || null,
-        commercial_model: serp.commercial_model,
-        reference_code: serp.reference_code,
-        official_url: serp.official_url,
-        serper_title: serp.serper_title,
-        serper_snippet: serp.serper_snippet
+        commercial_model: sanitizePgText(serp.commercial_model) || null,
+        reference_code: sanitizePgText(serp.reference_code) || null,
+        official_url: sanitizePgText(serp.official_url) || null,
+        serper_title: sanitizePgText(serp.serper_title) || null,
+        serper_snippet: sanitizePgText(serp.serper_snippet) || null
     };
 }
 
 module.exports = {
     buildMonitorCacheKey,
     vendorToDisplayBrand,
+    sanitizePgText,
     resolveMonitorCommercialModel
 };

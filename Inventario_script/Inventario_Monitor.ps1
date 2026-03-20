@@ -14,7 +14,10 @@ function Get-CopowerWmiMonitors {
     # Same source as monitors_impl: WmiMonitorID (correct serial / internal codes vs PnP)
     $Normalize = {
         param([int[]]$In)
-        ($In | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
+        if ($null -eq $In) { return '' }
+        $s = ($In | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
+        # Neon/UTF-8 rejects char NUL; strip any leftover
+        return ($s.Replace([char]0, '')).Trim()
     }
     $list = @()
     try {
