@@ -33,6 +33,27 @@ async function updateSchema() {
             CREATE INDEX IF NOT EXISTS idx_monitores_correo 
             ON inventario_monitores(correo_empleado);
         `;
+        await sql`
+            ALTER TABLE inventario_monitores
+            ADD COLUMN IF NOT EXISTS referencia_comercial TEXT;
+        `;
+        console.log("  -> OK");
+
+        console.log("Step 2b: Creating monitor_model_cache (Serper lookup cache)...");
+        await sql`
+            CREATE TABLE IF NOT EXISTS monitor_model_cache (
+                id                   SERIAL PRIMARY KEY,
+                cache_key            VARCHAR(512) UNIQUE NOT NULL,
+                manufacturer_hw      VARCHAR(100),
+                model_hw             VARCHAR(255),
+                product_code         VARCHAR(100),
+                commercial_model     TEXT,
+                reference_code       TEXT,
+                official_url         TEXT,
+                serper_title         TEXT,
+                ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `;
         console.log("  -> OK");
 
         console.log("Step 3: Creating inventario_celulares table...");

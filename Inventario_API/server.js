@@ -9,6 +9,7 @@ app.use(express.json({ limit: '10mb' })); // Aumentamos límite para listas larg
 
 const odooClient = require("./odoo_client");
 const imageService = require("./image_service");
+const monitorModelResolve = require("./monitor_model_resolve");
 
 // Boot up logic to check and alter schema, then load Odoo cache
 async function bootstrap() {
@@ -31,6 +32,24 @@ async function bootstrap() {
             ADD COLUMN IF NOT EXISTS odoo_id INT,
             ADD COLUMN IF NOT EXISTS image_url TEXT,
             ADD COLUMN IF NOT EXISTS synced BOOLEAN DEFAULT false;
+        `;
+        await sql`
+            CREATE TABLE IF NOT EXISTS monitor_model_cache (
+                id                   SERIAL PRIMARY KEY,
+                cache_key            VARCHAR(512) UNIQUE NOT NULL,
+                manufacturer_hw      VARCHAR(100),
+                model_hw             VARCHAR(255),
+                product_code         VARCHAR(100),
+                commercial_model     TEXT,
+                reference_code       TEXT,
+                official_url         TEXT,
+                serper_title         TEXT,
+                ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `;
+        await sql`
+            ALTER TABLE inventario_monitores
+            ADD COLUMN IF NOT EXISTS referencia_comercial TEXT;
         `;
         console.log("DB Schema updated correctly.");
         await odooClient.refreshCache();
@@ -304,6 +323,25 @@ app.post("/sync", async (req, res) => {
     res.status(200).json({ message: "Sync manual endpoint: En desarrollo." });
 });
 
+// Resolve commercial monitor model (Neon cache first, then Serper search)
+app.post("/api/monitor_resolve", async (req, res) => {
+    try {
+        const { manufacturer, model, productCode } = req.body;
+        if (!manufacturer || !manufacturer.toString().trim()) {
+            return res.status(400).json({ error: "Falta manufacturer (código WMI, ej. SAM)" });
+        }
+        const result = await monitorModelResolve.resolveMonitorCommercialModel(sql, {
+            manufacturer: manufacturer.toString().trim(),
+            model: model != null ? model.toString() : "",
+            productCode: productCode != null ? productCode.toString() : ""
+        });
+        res.status(200).json(result);
+    } catch (error) {
+        console.error("Error en /api/monitor_resolve:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ---- Monitores ----
 app.post("/api/monitor", async (req, res) => {
     try {
@@ -319,14 +357,15 @@ app.post("/api/monitor", async (req, res) => {
         }
 
         await sql`
-            INSERT INTO inventario_monitores (serial, marca, modelo, id_hardware, correo_empleado, ultima_actualizacion)
-            VALUES (${d.serial}, ${d.marca || null}, ${d.modelo || null}, ${d.id_hardware || null}, ${correo}, ${timestamp}::timestamp)
+            INSERT INTO inventario_monitores (serial, marca, modelo, referencia_comercial, id_hardware, correo_empleado, ultima_actualizacion)
+            VALUES (${d.serial}, ${d.marca || null}, ${d.modelo || null}, ${d.referencia_comercial || null}, ${d.id_hardware || null}, ${correo}, ${timestamp}::timestamp)
             ON CONFLICT (serial) DO UPDATE SET
-                marca                = EXCLUDED.marca,
-                modelo               = EXCLUDED.modelo,
-                id_hardware          = EXCLUDED.id_hardware,
-                correo_empleado      = EXCLUDED.correo_empleado,
-                ultima_actualizacion = EXCLUDED.ultima_actualizacion;
+                marca                 = EXCLUDED.marca,
+                modelo                = EXCLUDED.modelo,
+                referencia_comercial  = EXCLUDED.referencia_comercial,
+                id_hardware           = EXCLUDED.id_hardware,
+                correo_empleado       = EXCLUDED.correo_empleado,
+                ultima_actualizacion  = EXCLUDED.ultima_actualizacion;
         `;
 
         // Odoo Sync Logic Asynchronously (monitores)
@@ -355,7 +394,7 @@ app.post("/api/monitor", async (req, res) => {
                     serial_no: d.serial,
                     model: d.modelo,
                     location: 'Bucaramanga, Santander, Colombia',
-                    note: `<p>Hardware ID: ${d.id_hardware || ''}</p>`,
+                    note: `<p>Hardware ID: ${d.id_hardware || ''}<br/>Ref. comercial: ${d.referencia_comercial || ''}</p>`,
                     assign_date: timestamp.split('T')[0],
                     effective_date: timestamp.split('T')[0],
                     period: 180,
@@ -391,6 +430,7 @@ app.post("/api/monitor", async (req, res) => {
             serial: d.serial,
             marca: d.marca || null,
             modelo: d.modelo || null,
+            referencia_comercial: d.referencia_comercial || null,
             id_hardware: d.id_hardware || null,
             correo_empleado: correo
         });
