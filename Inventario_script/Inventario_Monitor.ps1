@@ -128,7 +128,8 @@ try {
             }
             $wmiFilas | Format-Table -AutoSize -Wrap
             Write-Host ""
-            $wSel = Read-Host "Seleccione numero WMI (recomendado) o 0 para solo usar lista PnP"
+            $wSelRaw = Read-Host "Seleccione numero WMI (recomendado) o 0 para solo usar lista PnP"
+            $wSel = $wSelRaw.Trim()
             if ($wSel -ne "0" -and $wSel -match '^\d+$' -and [int]$wSel -ge 1 -and [int]$wSel -le $wmiMonitors.Count) {
                 $w = $wmiMonitors[[int]$wSel - 1]
                 $usedWmiPath = $true
@@ -202,9 +203,11 @@ try {
             $pnpFilas | Format-Table -AutoSize -Wrap
             Write-Host ""
             if ($usedWmiPath) {
-                $seleccion = Read-Host "Seleccione el mismo monitor en PnP para guardar id_hardware (0 omitir)"
+                $seleccionRaw = Read-Host "Seleccione el mismo monitor en PnP para guardar id_hardware (0 omitir)"
+                $seleccion = $seleccionRaw.Trim()
             } else {
-                $seleccion = Read-Host "Seleccione el numero del monitor a registrar (o 0 para ingresar manualmente)"
+                $seleccionRaw = Read-Host "Seleccione el numero del monitor a registrar (o 0 para ingresar manualmente)"
+                $seleccion = $seleccionRaw.Trim()
             }
 
             if ($seleccion -ne "0" -and $seleccion -match '^\d+$' -and [int]$seleccion -ge 1 -and [int]$seleccion -le $monitores.Count) {
@@ -238,14 +241,20 @@ try {
 
     $marcaInput = Read-Host "Marca (referencia: '$($datosMonitor.Marca)') (Enter para omitir)"
     if ($marcaInput.Trim() -eq "") {
-        $datosMonitor.Marca = $null
+        # If we already detected a brand (from WMI/PnP), keep it.
+        if ([string]::IsNullOrWhiteSpace($datosMonitor.Marca)) {
+            $datosMonitor.Marca = $null
+        }
     } else {
         $datosMonitor.Marca = $marcaInput.Trim()
     }
 
     $modeloInput = Read-Host "Modelo (referencia: '$($datosMonitor.Modelo)') (Enter para omitir)"
     if ($modeloInput.Trim() -eq "") {
-        $datosMonitor.Modelo = $null
+        # If we already detected a model (from WMI/PnP), keep it.
+        if ([string]::IsNullOrWhiteSpace($datosMonitor.Modelo)) {
+            $datosMonitor.Modelo = $null
+        }
     } else {
         $datosMonitor.Modelo = $modeloInput.Trim()
     }

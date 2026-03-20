@@ -182,7 +182,14 @@ async function resolveMonitorCommercialModel(sql, input) {
     const productCode = sanitizePgText(input.productCode != null ? input.productCode : '');
 
     const cacheKey = buildMonitorCacheKey(manufacturer, modelHw, productCode);
-    const cached = await lookupCache(sql, cacheKey);
+    let cached = null;
+    let cacheLookupError = null;
+    try {
+        cached = await lookupCache(sql, cacheKey);
+    } catch (err) {
+        cacheLookupError = err && err.message ? err.message : String(err);
+        console.error('[monitor_resolve] DB cache lookup failed:', cacheLookupError);
+    }
     const brandDisplay = vendorToDisplayBrand(manufacturer);
 
     if (cached) {
@@ -202,16 +209,22 @@ async function resolveMonitorCommercialModel(sql, input) {
 
     const serp = await searchMonitorSpecsViaSerper(brandDisplay, modelHw, productCode);
 
-    await upsertCache(sql, {
-        cache_key: cacheKey,
-        manufacturer_hw: manufacturer,
-        model_hw: modelHw || null,
-        product_code: productCode || null,
-        commercial_model: sanitizePgText(serp.commercial_model) || null,
-        reference_code: sanitizePgText(serp.reference_code) || null,
-        official_url: sanitizePgText(serp.official_url) || null,
-        serper_title: sanitizePgText(serp.serper_title) || null
-    });
+    let cacheUpsertError = null;
+    try {
+        await upsertCache(sql, {
+            cache_key: cacheKey,
+            manufacturer_hw: manufacturer,
+            model_hw: modelHw || null,
+            product_code: productCode || null,
+            commercial_model: sanitizePgText(serp.commercial_model) || null,
+            reference_code: sanitizePgText(serp.reference_code) || null,
+            official_url: sanitizePgText(serp.official_url) || null,
+            serper_title: sanitizePgText(serp.serper_title) || null
+        });
+    } catch (err) {
+        cacheUpsertError = err && err.message ? err.message : String(err);
+        console.error('[monitor_resolve] DB cache upsert failed:', cacheUpsertError);
+    }
 
     return {
         from_cache: false,
@@ -224,7 +237,9 @@ async function resolveMonitorCommercialModel(sql, input) {
         reference_code: sanitizePgText(serp.reference_code) || null,
         official_url: sanitizePgText(serp.official_url) || null,
         serper_title: sanitizePgText(serp.serper_title) || null,
-        serper_snippet: sanitizePgText(serp.serper_snippet) || null
+        serper_snippet: sanitizePgText(serp.serper_snippet) || null,
+        cache_db_lookup_error: cacheLookupError,
+        cache_db_upsert_error: cacheUpsertError
     };
 }
 
