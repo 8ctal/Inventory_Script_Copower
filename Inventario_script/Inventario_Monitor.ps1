@@ -10,24 +10,31 @@
 $UrlEndpoint = "http://192.168.20.5:3000/api/monitor"
 $ResolveEndpoint = "http://192.168.20.5:3000/api/monitor_resolve"
 
+function Get-Normalized {
+    # Filters out padding from EDID codes (uint16 arrays from WmiMonitorID)
+    param([int[]]$In)
+    if ($null -eq $In) { return '' }
+    $s = ($In | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
+    return ($s.Replace([char]0, '')).Trim()
+}
+
 function Get-CopowerWmiMonitors {
-    # Same source as monitors_impl: WmiMonitorID (correct serial / internal codes vs PnP)
-    $Normalize = {
-        param([int[]]$In)
-        if ($null -eq $In) { return '' }
-        $s = ($In | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
-        # Neon/UTF-8 rejects char NUL; strip any leftover
-        return ($s.Replace([char]0, '')).Trim()
-    }
+    # WmiMonitorID: use UserFriendlyName (singular) — correct on current Windows; UserFriendlyNames is wrong here and breaks Model.
     $list = @()
     try {
         Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction Stop | ForEach-Object {
             if ($_.Active) {
+                # Prefer UserFriendlyName; fallback UserFriendlyNames on older CIM schemas
+                $userFriendly = $_.UserFriendlyName
+                if ($null -eq $userFriendly) {
+                    $userFriendly = $_.UserFriendlyNames
+                }
                 $list += [PSCustomObject]@{
-                    Manufacturer = (& $Normalize $_.ManufacturerName)
-                    Model        = (& $Normalize $_.UserFriendlyNames)
-                    ProductCode  = (& $Normalize $_.ProductCodeID)
-                    Serial       = (& $Normalize $_.SerialNumberID)
+                    Manufacturer = (Get-Normalized $_.ManufacturerName)
+                    Model        = (Get-Normalized $userFriendly)
+                    ProductCode  = (Get-Normalized $_.ProductCodeID)
+                    Serial       = (Get-Normalized $_.SerialNumberID)
+                    Active       = $_.Active
                 }
             }
         }

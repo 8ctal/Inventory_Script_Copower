@@ -98,9 +98,10 @@ $GetNormalized = {
 }
 
 Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorID | ForEach-Object {
+    $uf = $_.UserFriendlyName; if ($null -eq $uf) { $uf = $_.UserFriendlyNames }
     [PSCustomObject]@{
         Manufacturer = & $GetNormalized $_.ManufacturerName
-        Model        = & $GetNormalized $_.UserFriendlyNames
+        Model        = & $GetNormalized $uf
         ProductCode  = & $GetNormalized $_.ProductCodeID
         Serial       = & $GetNormalized $_.SerialNumberID
         Active       = $_.Active
