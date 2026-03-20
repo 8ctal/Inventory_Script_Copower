@@ -19,27 +19,28 @@ function Get-Normalized {
 }
 
 function Get-CopowerWmiMonitors {
-    # WmiMonitorID: use UserFriendlyName (singular) — correct on current Windows; UserFriendlyNames is wrong here and breaks Model.
+    # Same logic as your working script: list ALL WmiMonitorID rows (do NOT filter by Active).
+    # Many external panels report Active=False in WMI while PnP still shows them — filtering Active left the list empty.
     $list = @()
     try {
-        Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction Stop | ForEach-Object {
-            if ($_.Active) {
-                # Prefer UserFriendlyName; fallback UserFriendlyNames on older CIM schemas
-                $userFriendly = $_.UserFriendlyName
-                if ($null -eq $userFriendly) {
-                    $userFriendly = $_.UserFriendlyNames
-                }
-                $list += [PSCustomObject]@{
-                    Manufacturer = (Get-Normalized $_.ManufacturerName)
-                    Model        = (Get-Normalized $userFriendly)
-                    ProductCode  = (Get-Normalized $_.ProductCodeID)
-                    Serial       = (Get-Normalized $_.SerialNumberID)
-                    Active       = $_.Active
-                }
+        $instances = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction Stop)
+        foreach ($inst in $instances) {
+            $userFriendly = $inst.UserFriendlyName
+            if ($null -eq $userFriendly) {
+                $userFriendly = $inst.UserFriendlyNames
+            }
+            $list += [PSCustomObject]@{
+                Manufacturer = (Get-Normalized $inst.ManufacturerName)
+                Model        = (Get-Normalized $userFriendly)
+                ProductCode  = (Get-Normalized $inst.ProductCodeID)
+                Serial       = (Get-Normalized $inst.SerialNumberID)
+                Active       = $inst.Active
             }
         }
+        # Show Active=True first in UI, but keep every row
+        $list = @($list | Sort-Object @{ Expression = { -not [bool]$_.Active } })
     } catch {
-        # WMI may be unavailable on some hosts
+        Write-Host "WMI WmiMonitorID error: $($_.Exception.Message)" -ForegroundColor DarkYellow
     }
     return @($list)
 }
@@ -106,12 +107,13 @@ try {
         $wmiMonitors = @(Get-CopowerWmiMonitors)
         if ($wmiMonitors.Count -gt 0) {
             Write-Host ""
-            Write-Host "Monitores (WMI - una fila por dispositivo):" -ForegroundColor Green
+            Write-Host "Monitores (WMI - una fila por dispositivo; Active segun Windows):" -ForegroundColor Green
             $wmiFilas = @()
             for ($wi = 0; $wi -lt $wmiMonitors.Count; $wi++) {
                 $wm = $wmiMonitors[$wi]
                 $wmiFilas += [PSCustomObject]@{
                     '#'           = ($wi + 1)
+                    Active        = $wm.Active
                     Marca         = $wm.Manufacturer
                     'Modelo WMI'  = $wm.Model
                     ProductCode   = $wm.ProductCode
