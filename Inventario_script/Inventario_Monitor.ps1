@@ -11,11 +11,17 @@ $UrlEndpoint = "http://192.168.20.5:3000/api/monitor"
 $ResolveEndpoint = "http://192.168.20.5:3000/api/monitor_resolve"
 
 function Get-Normalized {
-    # Filters out padding from EDID codes (uint16 arrays from WmiMonitorID)
+    # Filters out padding from EDID codes (uint16 arrays from WmiMonitorID).
+    # Do NOT use String.Replace([char], '') with empty string — .NET has no Replace(char,string); PowerShell throws.
     param([int[]]$In)
     if ($null -eq $In) { return '' }
-    $s = ($In | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ }) -join ''
-    return ($s.Replace([char]0, '')).Trim()
+    $codeUnits = @($In | Where-Object { $_ -ne 0 })
+    if ($codeUnits.Count -eq 0) { return '' }
+    $s = -join ($codeUnits | ForEach-Object { [char]$_ })
+    if ([string]::IsNullOrEmpty($s)) { return '' }
+    # Strip any U+0000 that might still appear in the string (safe for Neon/UTF-8)
+    $s = -join ($s.ToCharArray() | Where-Object { [int][char]$_ -ne 0 })
+    return $s.Trim()
 }
 
 function Get-CopowerWmiMonitors {
@@ -155,7 +161,7 @@ try {
                 }
             }
         } else {
-            Write-Host "WMI no devolvio monitores activos (se usara PnP si existe)." -ForegroundColor DarkYellow
+            Write-Host "WMI no devolvio filas de WmiMonitorID (se usara PnP si existe)." -ForegroundColor DarkYellow
         }
 
         # --- 2) PnP: id_hardware y/o fallback marca/modelo/serial ---
