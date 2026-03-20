@@ -355,10 +355,12 @@ app.post("/sync", async (req, res) => {
                 ie.procesador,
                 ie.disco_total_gb,
                 ie.correo_empleado,
+                e.nombre AS empleado_nombre,
                 ie.garantia_fin,
                 ie.ultima_actualizacion,
                 ie.synced
             FROM inventario_equipos ie
+            LEFT JOIN empleados e ON ie.correo_empleado = e.correo_empresarial
             WHERE COALESCE(ie.synced, false) = false
             ORDER BY ie.ultima_actualizacion DESC
             LIMIT ${limit}
@@ -369,8 +371,15 @@ app.post("/sync", async (req, res) => {
             const serial = row.serial;
             try {
                 const emailToResolve = row.correo_empleado || null;
-                const empleadoOdooId = odooClient.resolveUserId(emailToResolve) || null;
-                const employeeId = odooClient.resolveEmployeeId(emailToResolve) || null;
+                const employeeNameToResolve = row.empleado_nombre || null;
+                const empleadoOdooId =
+                    odooClient.resolveUserId(emailToResolve) ||
+                    odooClient.resolveUserId(employeeNameToResolve) ||
+                    null;
+                const employeeId =
+                    odooClient.resolveEmployeeId(emailToResolve) ||
+                    odooClient.resolveEmployeeIdByName(employeeNameToResolve) ||
+                    null;
 
                 const categoriaOdooId = odooClient.resolveCategoryId('EQUIPO-DE-COMPUTO') || false;
                 const proveedorOdooId = false;
@@ -445,12 +454,16 @@ app.post("/sync", async (req, res) => {
                 results.push({
                     serial,
                     synced: true,
-                    odoo_id: odooId
+                    odoo_id: odooId,
+                    owner_user_id: empleadoOdooId || null,
+                    employee_id: employeeId || null
                 });
             } catch (syncErr) {
                 results.push({
                     serial,
                     synced: false,
+                    owner_user_id: null,
+                    employee_id: null,
                     error: syncErr && syncErr.message ? syncErr.message : String(syncErr)
                 });
             }

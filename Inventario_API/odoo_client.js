@@ -273,6 +273,14 @@ function resolveEmployeeId(email) {
     return null;
 }
 
+function resolveEmployeeIdByName(name) {
+    if (!name) return null;
+    const trimmed = name.toString().trim();
+    if (!trimmed) return null;
+    const keyName = normalize(trimmed);
+    return cache.employees_by_name[keyName] || null;
+}
+
 async function createEquipment(data) {
     await connect();
     const id = await executeKw('maintenance.equipment', 'create', [data]);
@@ -294,6 +302,7 @@ module.exports = {
     resolvePartnerId,
     resolveTeamId,
     resolveEmployeeId,
+    resolveEmployeeIdByName,
     searchEmployeesByFirstName,
     createEquipment,
     updateEquipment
