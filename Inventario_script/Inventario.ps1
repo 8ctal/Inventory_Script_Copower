@@ -175,6 +175,10 @@ try {
                     $selInt = [int]$selCorreo.Trim()
                     if ($selInt -ge 1 -and $selInt -le $results.Count) {
                         $selected = $results[$selInt - 1]
+                        if ($selected.name -and $selected.name.ToString().Trim() -ne "") {
+                            # Persist the selected full name (not the first-name search input)
+                            $empleadoActual.nombre = $selected.name.ToString().Trim()
+                        }
                         if ($selected.work_email -and $selected.work_email.ToString().Trim() -ne "") {
                             $empleadoActual.correo_empresarial = $selected.work_email.ToString().Trim()
                         }

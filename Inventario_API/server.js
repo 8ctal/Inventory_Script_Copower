@@ -247,7 +247,23 @@ app.post("/api/inventario", async (req, res) => {
                     employee_id: employeeId || false
                 };
 
-                const odooId = await odooClient.createEquipment(equipmentData);
+                let odooId = null;
+                try {
+                    odooId = await odooClient.createEquipment(equipmentData);
+                } catch (createErr) {
+                    const msg = createErr && createErr.message ? createErr.message : String(createErr);
+                    const isImageDecodeError =
+                        msg.toLowerCase().includes('could not be decoded as an image file') ||
+                        msg.toLowerCase().includes('decoded as an image file');
+                    if (!isImageDecodeError) {
+                        throw createErr;
+                    }
+
+                    console.error(`[SYNC inventario] Odoo rechazo imagen para ${d.serial}; reintentando sin image_1920.`);
+                    const equipmentNoImage = { ...equipmentData, image_1920: false };
+                    odooId = await odooClient.createEquipment(equipmentNoImage);
+                    imageUrl = null;
+                }
                 console.log(`Equipo creado en Odoo con ID: ${odooId}`);
 
                 // 4. Actualizar Neon DB con estado sync
@@ -320,7 +336,139 @@ app.post("/image", async (req, res) => {
 });
 
 app.post("/sync", async (req, res) => {
-    res.status(200).json({ message: "Sync manual endpoint: En desarrollo." });
+    try {
+        const body = req.body || {};
+        const requestedLimit = Number(body.limit);
+        const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+            ? Math.min(Math.floor(requestedLimit), 100)
+            : 20;
+
+        const pending = await sql`
+            SELECT
+                ie.serial,
+                ie.hostname,
+                ie.fabricante,
+                ie.modelo,
+                ie.sistema_op,
+                ie.sistema_version,
+                ie.ram_gb,
+                ie.procesador,
+                ie.disco_total_gb,
+                ie.correo_empleado,
+                ie.garantia_fin,
+                ie.ultima_actualizacion,
+                ie.synced
+            FROM inventario_equipos ie
+            WHERE COALESCE(ie.synced, false) = false
+            ORDER BY ie.ultima_actualizacion DESC
+            LIMIT ${limit}
+        `;
+
+        const results = [];
+        for (const row of pending) {
+            const serial = row.serial;
+            try {
+                const emailToResolve = row.correo_empleado || null;
+                const empleadoOdooId = odooClient.resolveUserId(emailToResolve) || null;
+                const employeeId = odooClient.resolveEmployeeId(emailToResolve) || null;
+
+                const categoriaOdooId = odooClient.resolveCategoryId('EQUIPO-DE-COMPUTO') || false;
+                const proveedorOdooId = false;
+
+                let imageUrl = null;
+                let imageBase64 = null;
+                try {
+                    imageUrl = await imageService.processDeviceImage(row.fabricante, row.modelo);
+                    if (imageUrl) {
+                        imageBase64 = await imageService.getBase64FromUrl(imageUrl);
+                    }
+                } catch (imgErr) {
+                    console.error(`[SYNC retry] Error obteniendo imagen para ${serial}:`, imgErr.message);
+                }
+
+                const assignDate = row.ultima_actualizacion
+                    ? new Date(row.ultima_actualizacion).toISOString().split('T')[0]
+                    : new Date().toISOString().split('T')[0];
+                const warrantyDate = row.garantia_fin
+                    ? new Date(row.garantia_fin).toISOString().split('T')[0]
+                    : false;
+
+                const equipmentData = {
+                    name: `${row.fabricante || ''} ${row.modelo || ''} - ${serial}`,
+                    display_name: `${row.fabricante || ''} ${row.modelo || ''} - ${serial}`,
+                    serial_no: serial,
+                    model: row.modelo || null,
+                    location: 'Bucaramanga, Santander, Colombia',
+                    cost: 3500000,
+                    rental_cost: 0,
+                    note: `<p>Hostname: ${row.hostname || ''}<br/>SO: ${row.sistema_op || ''} ${row.sistema_version || ''}<br/>RAM: ${row.ram_gb || ''}GB<br/>Procesador: ${row.procesador || ''}<br/>Disco: ${row.disco_total_gb || ''}GB</p>`,
+                    assign_date: assignDate,
+                    warranty_date: warrantyDate,
+                    effective_date: assignDate,
+                    period: 180,
+                    maintenance_duration: 1.0,
+                    image_1920: imageBase64 || false,
+                    active: true,
+                    day_last_maintenance_done: '2025-12-25',
+                    partner_id: proveedorOdooId,
+                    category_id: categoriaOdooId,
+                    technician_user_id: odooClient.resolveUserId('sistemas@copower.com.co') || false,
+                    maintenance_team_id: odooClient.resolveTeamId('TECNOLOGIA') || false,
+                    owner_user_id: empleadoOdooId || false,
+                    employee_id: employeeId || false
+                };
+
+                let odooId = null;
+                try {
+                    odooId = await odooClient.createEquipment(equipmentData);
+                } catch (createErr) {
+                    const msg = createErr && createErr.message ? createErr.message : String(createErr);
+                    const isImageDecodeError =
+                        msg.toLowerCase().includes('could not be decoded as an image file') ||
+                        msg.toLowerCase().includes('decoded as an image file');
+                    if (!isImageDecodeError) {
+                        throw createErr;
+                    }
+
+                    console.error(`[SYNC retry] Odoo rechazo imagen para ${serial}; reintentando sin imagen.`);
+                    const equipmentNoImage = { ...equipmentData, image_1920: false };
+                    odooId = await odooClient.createEquipment(equipmentNoImage);
+                    imageUrl = null;
+                }
+
+                await sql`
+                    UPDATE inventario_equipos
+                    SET odoo_id = ${odooId}, image_url = ${imageUrl}, synced = true
+                    WHERE serial = ${serial};
+                `;
+
+                results.push({
+                    serial,
+                    synced: true,
+                    odoo_id: odooId
+                });
+            } catch (syncErr) {
+                results.push({
+                    serial,
+                    synced: false,
+                    error: syncErr && syncErr.message ? syncErr.message : String(syncErr)
+                });
+            }
+        }
+
+        const okCount = results.filter((r) => r.synced).length;
+        const failCount = results.length - okCount;
+        res.status(200).json({
+            status: "completed",
+            processed: results.length,
+            synced_ok: okCount,
+            synced_failed: failCount,
+            results
+        });
+    } catch (error) {
+        console.error("Error en /sync:", error.message);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Resolve commercial monitor model (Neon cache first, then Serper search)
