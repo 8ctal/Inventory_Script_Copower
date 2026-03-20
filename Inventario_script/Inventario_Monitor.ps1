@@ -31,7 +31,7 @@ function Get-CopowerWmiMonitors {
     } catch {
         # WMI may be unavailable on some hosts
     }
-    return ,$list
+    return @($list)
 }
 
 function Parse-MonitorPnP {
@@ -68,115 +68,141 @@ function Parse-MonitorPnP {
 }
 
 try {
-    Clear-Host
-    Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "   INVENTARIO DE MONITORES" -ForegroundColor Cyan
-    Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Detectando monitores (WMI + PnP)..." -ForegroundColor Yellow
+    $numRegistro = 0
+    $correoSesion = $null
 
-    $datosMonitor = @{
-        Marca                = ""
-        Modelo               = ""
-        Serial               = ""
-        IdHardware           = ""
-        ReferenciaComercial  = $null
-    }
-    $usedWmiPath = $false
-
-    # --- 1) WMI: serial y codigos internos correctos (recomendado) ---
-    $wmiMonitors = @(Get-CopowerWmiMonitors)
-    if ($wmiMonitors.Count -gt 0) {
-        Write-Host ""
-        Write-Host "Monitores (WMI - serial y codigo interno):" -ForegroundColor Green
-        $wi = 1
-        foreach ($wm in $wmiMonitors) {
-            Write-Host "  [$wi] $($wm.Manufacturer) | Modelo WMI: $($wm.Model) | ProductCode: $($wm.ProductCode) | Serial: $($wm.Serial)" -ForegroundColor White
-            $wi++
+    do {
+        $numRegistro++
+        Clear-Host
+        Write-Host "==========================================" -ForegroundColor Cyan
+        Write-Host "   INVENTARIO DE MONITORES" -ForegroundColor Cyan
+        if ($numRegistro -gt 1) {
+            Write-Host "   (Registro #$numRegistro)" -ForegroundColor DarkCyan
         }
+        Write-Host "==========================================" -ForegroundColor Cyan
         Write-Host ""
-        $wSel = Read-Host "Seleccione numero WMI (recomendado) o 0 para solo usar lista PnP"
-        if ($wSel -ne "0" -and $wSel -match '^\d+$' -and [int]$wSel -ge 1 -and [int]$wSel -le $wmiMonitors.Count) {
-            $w = $wmiMonitors[[int]$wSel - 1]
-            $usedWmiPath = $true
-            $datosMonitor.Serial = $w.Serial.Trim()
-            try {
-                $resolveBody = @{
-                    manufacturer = $w.Manufacturer
-                    model        = $w.Model
-                    productCode  = $w.ProductCode
-                } | ConvertTo-Json -Depth 5 -Compress
-                $resolved = Invoke-RestMethod -Uri $ResolveEndpoint -Method Post -Body $resolveBody -ContentType "application/json"
-                $datosMonitor.Marca = $resolved.brand_display
-                if ($resolved.commercial_model) {
-                    $datosMonitor.Modelo = $resolved.commercial_model
-                } elseif ($w.Model) {
-                    $datosMonitor.Modelo = $w.Model.Trim()
+        Write-Host "Detectando monitores (WMI + PnP)..." -ForegroundColor Yellow
+
+        $datosMonitor = @{
+            Marca                = ""
+            Modelo               = ""
+            Serial               = ""
+            IdHardware           = ""
+            ReferenciaComercial  = $null
+        }
+        $usedWmiPath = $false
+
+        # --- 1) WMI: serial y codigos internos correctos (recomendado) ---
+        $wmiMonitors = @(Get-CopowerWmiMonitors)
+        if ($wmiMonitors.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Monitores (WMI - una fila por dispositivo):" -ForegroundColor Green
+            $wmiFilas = @()
+            for ($wi = 0; $wi -lt $wmiMonitors.Count; $wi++) {
+                $wm = $wmiMonitors[$wi]
+                $wmiFilas += [PSCustomObject]@{
+                    '#'           = ($wi + 1)
+                    Marca         = $wm.Manufacturer
+                    'Modelo WMI'  = $wm.Model
+                    ProductCode   = $wm.ProductCode
+                    Serial        = $wm.Serial
                 }
-                $datosMonitor.ReferenciaComercial = $resolved.reference_code
-                Write-Host ""
-                Write-Host "Resolucion modelo comercial: $($datosMonitor.Modelo) | ref: $($datosMonitor.ReferenciaComercial) | desde cache: $($resolved.from_cache)" -ForegroundColor Gray
-                if ($resolved.official_url) {
-                    Write-Host "  Fuente: $($resolved.official_url)" -ForegroundColor DarkGray
+            }
+            $wmiFilas | Format-Table -AutoSize -Wrap
+            Write-Host ""
+            $wSel = Read-Host "Seleccione numero WMI (recomendado) o 0 para solo usar lista PnP"
+            if ($wSel -ne "0" -and $wSel -match '^\d+$' -and [int]$wSel -ge 1 -and [int]$wSel -le $wmiMonitors.Count) {
+                $w = $wmiMonitors[[int]$wSel - 1]
+                $usedWmiPath = $true
+                $datosMonitor.Serial = $w.Serial.Trim()
+                try {
+                    $resolveBody = @{
+                        manufacturer = $w.Manufacturer
+                        model        = $w.Model
+                        productCode  = $w.ProductCode
+                    } | ConvertTo-Json -Depth 5 -Compress
+                    $resolved = Invoke-RestMethod -Uri $ResolveEndpoint -Method Post -Body $resolveBody -ContentType "application/json"
+                    $datosMonitor.Marca = $resolved.brand_display
+                    if ($resolved.commercial_model) {
+                        $datosMonitor.Modelo = $resolved.commercial_model
+                    } elseif ($w.Model) {
+                        $datosMonitor.Modelo = $w.Model.Trim()
+                    }
+                    $datosMonitor.ReferenciaComercial = $resolved.reference_code
+                    Write-Host ""
+                    Write-Host "Resolucion modelo comercial: $($datosMonitor.Modelo) | ref: $($datosMonitor.ReferenciaComercial) | desde cache: $($resolved.from_cache)" -ForegroundColor Gray
+                    if ($resolved.official_url) {
+                        Write-Host "  Fuente: $($resolved.official_url)" -ForegroundColor DarkGray
+                    }
+                } catch {
+                    Write-Host ""
+                    Write-Host "ADVERTENCIA: No se pudo llamar a /api/monitor_resolve: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Host "Se usan datos WMI crudos (marca codigo + modelo interno)." -ForegroundColor Yellow
+                    $datosMonitor.Marca = $w.Manufacturer
+                    $datosMonitor.Modelo = if ($w.Model) { $w.Model.Trim() } else { "" }
                 }
-            } catch {
-                Write-Host ""
-                Write-Host "ADVERTENCIA: No se pudo llamar a /api/monitor_resolve: $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-Host "Se usan datos WMI crudos (marca codigo + modelo interno)." -ForegroundColor Yellow
-                $datosMonitor.Marca = $w.Manufacturer
-                $datosMonitor.Modelo = if ($w.Model) { $w.Model.Trim() } else { "" }
+            }
+        } else {
+            Write-Host "WMI no devolvio monitores activos (se usara PnP si existe)." -ForegroundColor DarkYellow
+        }
+
+        # --- 2) PnP: id_hardware y/o fallback marca/modelo/serial ---
+        # Forzar array: con 1 solo monitor Win32_PnPEntity no tiene .Count y rompe la lista de opciones
+        $rawPnp = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+            $_.Service -eq "monitor" -and $_.Caption
+        })
+        $monitores = @(
+            foreach ($rp in $rawPnp) {
+                [PSCustomObject]@{
+                    Nombre     = $rp.Caption
+                    Estado     = $rp.Status
+                    PNPDeviceID = $rp.PNPDeviceID
+                }
+            }
+        )
+
+        $monitorSeleccionado = $null
+        if ($monitores.Count -eq 0) {
+            Write-Host ""
+            Write-Host "No se detectaron monitores PnP." -ForegroundColor Red
+            if (-not $usedWmiPath) {
+                Write-Host "Ingresara los datos manualmente." -ForegroundColor Yellow
+            }
+            Write-Host ""
+        } else {
+            Write-Host ""
+            Write-Host "Monitores PnP (una fila por dispositivo - id_hardware / fallback):" -ForegroundColor Green
+            $pnpFilas = @()
+            for ($pi = 0; $pi -lt $monitores.Count; $pi++) {
+                $m = $monitores[$pi]
+                $pnpFilas += [PSCustomObject]@{
+                    '#'     = ($pi + 1)
+                    Nombre  = $m.Nombre
+                    'PNP ID' = $m.PNPDeviceID
+                }
+            }
+            $pnpFilas | Format-Table -AutoSize -Wrap
+            Write-Host ""
+            if ($usedWmiPath) {
+                $seleccion = Read-Host "Seleccione el mismo monitor en PnP para guardar id_hardware (0 omitir)"
+            } else {
+                $seleccion = Read-Host "Seleccione el numero del monitor a registrar (o 0 para ingresar manualmente)"
+            }
+
+            if ($seleccion -ne "0" -and $seleccion -match '^\d+$' -and [int]$seleccion -ge 1 -and [int]$seleccion -le $monitores.Count) {
+                $monitorSeleccionado = $monitores[[int]$seleccion - 1]
             }
         }
-    } else {
-        Write-Host "WMI no devolvio monitores activos (se usara PnP si existe)." -ForegroundColor DarkYellow
-    }
 
-    # --- 2) PnP: id_hardware y/o fallback marca/modelo/serial ---
-    $monitores = Get-CimInstance Win32_PnPEntity | Where-Object {
-        $_.Service -eq "monitor" -and $_.Caption
-    } | Select-Object @{N="Nombre"; E={$_.Caption}},
-                      @{N="Estado"; E={$_.Status}},
-                      @{N="PNPDeviceID"; E={$_.PNPDeviceID}}
-
-    $monitores | Format-Table -AutoSize
-
-    $monitorSeleccionado = $null
-    if (-not $monitores -or $monitores.Count -eq 0) {
-        Write-Host "No se detectaron monitores PnP." -ForegroundColor Red
-        if (-not $usedWmiPath) {
-            Write-Host "Ingresara los datos manualmente." -ForegroundColor Yellow
+        if ($monitorSeleccionado) {
+            $parsed = Parse-MonitorPnP -PnpId $monitorSeleccionado.PNPDeviceID
+            $datosMonitor.IdHardware = $parsed.RawId
+            if (-not $usedWmiPath) {
+                $datosMonitor.Marca  = $parsed.Marca
+                $datosMonitor.Modelo = $parsed.Modelo
+                $datosMonitor.Serial = $parsed.Serial
+            }
         }
-        Write-Host ""
-    } else {
-        Write-Host ""
-        Write-Host "Monitores PnP (para id_hardware / fallback):" -ForegroundColor Green
-        $i = 1
-        foreach ($m in $monitores) {
-            Write-Host "  [$i] $($m.Nombre)" -ForegroundColor White
-            Write-Host "      ID: $($m.PNPDeviceID)" -ForegroundColor Gray
-            $i++
-        }
-        Write-Host ""
-        if ($usedWmiPath) {
-            $seleccion = Read-Host "Seleccione el mismo monitor en PnP para guardar id_hardware (0 omitir)"
-        } else {
-            $seleccion = Read-Host "Seleccione el numero del monitor a registrar (o 0 para ingresar manualmente)"
-        }
-
-        if ($seleccion -ne "0" -and $seleccion -match '^\d+$' -and [int]$seleccion -ge 1 -and [int]$seleccion -le $monitores.Count) {
-            $monitorSeleccionado = $monitores[[int]$seleccion - 1]
-        }
-    }
-
-    if ($monitorSeleccionado) {
-        $parsed = Parse-MonitorPnP -PnpId $monitorSeleccionado.PNPDeviceID
-        $datosMonitor.IdHardware = $parsed.RawId
-        if (-not $usedWmiPath) {
-            $datosMonitor.Marca  = $parsed.Marca
-            $datosMonitor.Modelo = $parsed.Modelo
-            $datosMonitor.Serial = $parsed.Serial
-        }
-    }
 
     # ---- Mostrar información recolectada (solo referencia) ----
     Write-Host ""
@@ -245,9 +271,16 @@ try {
     Write-Host ""
     Write-Host "--- ASIGNACION DE EMPLEADO ---" -ForegroundColor Yellow
     $correoEmpleado = $null
-    if ($empleadoPrevio -and $empleadoPrevio.correo) {
-        Write-Host "Empleado anterior detectado: $($empleadoPrevio.correo)" -ForegroundColor Gray
-        $usarPrevio = Read-Host "¿Usar empleado anterior? (Enter=Si, n=No)"
+    if ($correoSesion) {
+        Write-Host "Empleado usado en este mismo script: $correoSesion" -ForegroundColor Gray
+        $mantenerSesion = Read-Host "¿Mantener el mismo empleado para este monitor? (Enter=Si, n=cambiar)"
+        if ($mantenerSesion.Trim() -eq "" -or $mantenerSesion.Trim().ToLower() -eq 's') {
+            $correoEmpleado = $correoSesion
+        }
+    }
+    if (-not $correoEmpleado -and $empleadoPrevio -and $empleadoPrevio.correo) {
+        Write-Host "Empleado en cache (PC/script previo): $($empleadoPrevio.correo)" -ForegroundColor Gray
+        $usarPrevio = Read-Host "¿Usar empleado del cache? (Enter=Si, n=No)"
         if ($usarPrevio.Trim() -eq "" -or $usarPrevio.Trim().ToLower() -eq 's') {
             $correoEmpleado = $empleadoPrevio.correo.Trim()
         }
@@ -302,7 +335,12 @@ try {
     Write-Host "Marca:  $($datosMonitor.Marca) $($datosMonitor.Modelo)" -ForegroundColor Cyan
     if ($correoEmpleado) {
         Write-Host "Asignado a: $correoEmpleado" -ForegroundColor Cyan
+        $correoSesion = $correoEmpleado
     }
+
+    Write-Host ""
+    $registrarOtro = Read-Host "¿Registrar otro monitor? (s/n; Enter=n)"
+    } while ($registrarOtro.Trim().ToLower() -eq 's' -or $registrarOtro.Trim().ToLower() -eq 'si')
 
 } catch {
     Write-Host ""
