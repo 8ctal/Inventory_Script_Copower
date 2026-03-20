@@ -15,6 +15,20 @@ try {
     Write-Host "   INVENTARIO DE CELULARES" -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
     Write-Host ""
+
+    Write-Host "--- COMPROBACION INICIAL ---" -ForegroundColor Yellow
+    $tieneCelular = Read-Host "¿El empleado tiene celular empresarial asignado? (s=Si, Enter o n=No, omitir registro)"
+    $tieneNorm = $tieneCelular.Trim().ToLower()
+    if ($tieneNorm -ne 's' -and $tieneNorm -ne 'si') {
+        Write-Host ""
+        Write-Host "Sin celular empresarial: no se registrara dispositivo ni se llamara al servidor." -ForegroundColor DarkYellow
+        Write-Host "Puede cerrar esta ventana o continuar con otro script." -ForegroundColor Gray
+        Write-Host ""
+        Read-Host "Presione Enter para salir"
+        exit 0
+    }
+
+    Write-Host ""
     Write-Host "Ingrese los datos del dispositivo movil:" -ForegroundColor Yellow
     Write-Host ""
 
